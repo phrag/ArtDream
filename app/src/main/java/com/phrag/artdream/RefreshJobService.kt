@@ -20,6 +20,10 @@ class RefreshJobService : JobService() {
         val t = Thread({
             var retry = false
             try {
+                if (Prefs(applicationContext).ownMode == Prefs.OWN_ONLY) {
+                    Log.i(TAG, "background refresh skipped: only the user's own media is shown")
+                    return@Thread
+                }
                 val n = ArtCache(applicationContext).refresh()
                 Log.i(TAG, "background refresh: $n")
                 // ALREADY_RUNNING: someone else is filling the cache; the next period will do.

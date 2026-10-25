@@ -7,12 +7,17 @@ import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.PorterDuff
+import android.graphics.SurfaceTexture
 import android.graphics.Typeface
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -24,6 +29,7 @@ import android.widget.LinearLayout
 import android.widget.TextClock
 import android.widget.TextView
 import com.phrag.artdream.source.ArtSource
+import java.io.File
 import java.util.Calendar
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -42,9 +48,30 @@ import kotlin.random.Random
  */
 class Slideshow(private val context: Context) {
 
-    private class Slide(val art: Artwork, val image: Bitmap, val backdrop: Bitmap) {
+    /**
+     * One slide's decoded content: a picture ([image]) or a video ([video], played by [player]
+     * on a surface once its view is laid out). The backdrop is the blurred picture/poster frame.
+     */
+    private class Slide(
+        val art: Artwork,
+        val image: Bitmap?,
+        val backdrop: Bitmap,
+        val video: File? = null,
+        val videoW: Int = 0,
+        val videoH: Int = 0,
+        val durationMs: Long = 0,
+    ) {
+        var player: MediaPlayer? = null
+        var surface: Surface? = null
+        var disposed = false
+
         fun recycle() {
-            image.recycle()
+            disposed = true
+            player?.let { runCatching { it.stop() }; it.release() }
+            player = null
+            surface?.release()
+            surface = null
+            image?.recycle()
             backdrop.recycle()
         }
     }
@@ -54,6 +81,7 @@ class Slideshow(private val context: Context) {
     private val loader: ExecutorService = Executors.newSingleThreadExecutor()   // decodes the next slide
     private val network: ExecutorService = Executors.newSingleThreadExecutor()  // tops up the cache
     private val cache = ArtCache(context.applicationContext)
+    private val own = OwnMedia(context.applicationContext)
     private val prefs = Prefs(context.applicationContext)
 
     private val status = TextView(context).apply {
@@ -87,8 +115,9 @@ class Slideshow(private val context: Context) {
     fun start() {
         if (running || released) return
         running = true
-        // Top up the cache in the background (one refresh at a time).
-        if (refreshing.compareAndSet(false, true)) {
+        // Top up the cache in the background (one refresh at a time) — unless only
+        // the user's own media is wanted, which needs no downloads.
+        if (prefs.ownMode != Prefs.OWN_ONLY && refreshing.compareAndSet(false, true)) {
             network.execute {
                 val added = try {
                     cache.refresh()
@@ -102,7 +131,16 @@ class Slideshow(private val context: Context) {
                 if (added > 0) main.post { if (running && current == null) advance() }
             }
         }
-        advance()
+        // Files left in the app's media folder (adb push) join the user's own media first, so
+        // the very first slide can already be one of them.
+        if (own.hasPending()) {
+            loader.execute {
+                runCatching { own.importPending() }
+                main.post { if (running) advance() }
+            }
+        } else {
+            advance()
+        }
     }
 
     fun stop() {
@@ -144,8 +182,9 @@ class Slideshow(private val context: Context) {
             return
         }
         loader.execute {
+            val mine = next.art.source == OwnMedia.SOURCE
             val slide = try {
-                decode(next)
+                if (mine && OwnMedia.isVideo(next)) decodeVideo(next) else decode(next)
             } catch (e: Throwable) {   // incl. OOM on a pathological file
                 Log.w(TAG, "decode ${next.image}: $e")
                 null
@@ -155,7 +194,12 @@ class Slideshow(private val context: Context) {
                     slide?.recycle()
                     return@post
                 }
-                if (slide == null) {
+                if (slide == null && mine) {
+                    // Never delete the user's own file on a failed decode; skip it, and pause
+                    // briefly so a playlist of nothing but bad files can't spin.
+                    Log.w(TAG, "skipping unreadable ${next.image.name}")
+                    main.postDelayed(::advance, 1_000)
+                } else if (slide == null) {
                     cache.remove(next.art)   // corrupt; drop it so we don't spin on it
                     advance()
                 } else {
@@ -203,7 +247,8 @@ class Slideshow(private val context: Context) {
             setImageBitmap(slide.backdrop)
             setColorFilter(Color.argb(150, 0, 0, 0), PorterDuff.Mode.SRC_ATOP)
         }
-        val painting = ImageView(context).apply {
+        val isVideo = slide.video != null
+        val painting: View = if (isVideo) videoView(slide, intervalMs) else ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setImageBitmap(slide.image)
             if (isNight()) colorFilter = NIGHT_FILTER
@@ -213,6 +258,9 @@ class Slideshow(private val context: Context) {
             tag = slide   // so discard() can recycle its bitmaps
             addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(painting, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            // A video can't take the bitmap colour filter, so dim and warm it with a veil.
+            if (isVideo && isNight()) addView(View(context).apply { setBackgroundColor(NIGHT_VEIL) },
+                FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             // CC BY / BY-SA images must stay attributed, so they keep a one-line
             // credit even when captions are switched off.
             val needsCredit = slide.art.license.startsWith("CC BY")
@@ -233,15 +281,91 @@ class Slideshow(private val context: Context) {
         slideView.animate().alpha(1f).setDuration(FADE_MS).withEndAction { old?.let(::discard) }
 
         // Ken Burns: slow zoom + drift in a random direction across the whole interval.
-        val drift = context.resources.displayMetrics.widthPixels * 0.02f
-        painting.animate()
-            .scaleX(1.06f).scaleY(1.06f)
-            .translationX(if (Random.nextBoolean()) drift else -drift)
-            .translationY(if (Random.nextBoolean()) drift / 2 else -drift / 2)
-            .setInterpolator(LinearInterpolator())
-            .setDuration(intervalMs + FADE_MS)
+        // (Videos already move, so they stay put.)
+        if (!isVideo) {
+            val drift = context.resources.displayMetrics.widthPixels * 0.02f
+            painting.animate()
+                .scaleX(1.06f).scaleY(1.06f)
+                .translationX(if (Random.nextBoolean()) drift else -drift)
+                .translationY(if (Random.nextBoolean()) drift / 2 else -drift / 2)
+                .setInterpolator(LinearInterpolator())
+                .setDuration(intervalMs + FADE_MS)
+        }
 
-        main.postDelayed(::advance, intervalMs)
+        main.postDelayed(::advance, if (isVideo) videoShowMs(slide, intervalMs) else intervalMs)
+    }
+
+    /**
+     * How long a video holds the screen: a clip shorter than the slide interval loops until the
+     * interval is up (so it doesn't flash by), a longer one plays through, up to [VIDEO_CAP_MS].
+     */
+    private fun videoShowMs(slide: Slide, intervalMs: Long): Long =
+        if (slide.durationMs < intervalMs) intervalMs else minOf(slide.durationMs, VIDEO_CAP_MS) + 500
+
+    /** The video, fitted to the screen on a [TextureView] (unlike a SurfaceView it fades with the slide). */
+    private fun videoView(slide: Slide, intervalMs: Long): View {
+        val dm = context.resources.displayMetrics
+        val vw = slide.videoW.coerceAtLeast(1)
+        val vh = slide.videoH.coerceAtLeast(1)
+        val fit = minOf(dm.widthPixels.toFloat() / vw, dm.heightPixels.toFloat() / vh)
+        val tv = TextureView(context)
+        tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
+                if (slide.disposed) return
+                try {
+                    val surface = Surface(st)
+                    val mp = MediaPlayer()
+                    slide.surface = surface
+                    slide.player = mp
+                    mp.setSurface(surface)
+                    mp.setDataSource(slide.video!!.path)
+                    mp.isLooping = slide.durationMs < intervalMs
+                    val vol = if (prefs.videoSound) 1f else 0f
+                    mp.setVolume(vol, vol)
+                    mp.setOnPreparedListener { if (!slide.disposed) it.start() }
+                    mp.setOnErrorListener { _, what, extra ->
+                        Log.w(TAG, "video ${slide.video?.name}: error $what/$extra")
+                        main.post { if (running && !slide.disposed && current?.tag === slide) advance() }
+                        true
+                    }
+                    mp.prepareAsync()
+                } catch (e: Exception) {
+                    Log.w(TAG, "video ${slide.video?.name}: $e")
+                    main.post { if (running && !slide.disposed && current?.tag === slide) advance() }
+                }
+            }
+            override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {}
+            override fun onSurfaceTextureDestroyed(st: SurfaceTexture) = true
+            override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+        }
+        return FrameLayout(context).apply {
+            addView(tv, FrameLayout.LayoutParams((vw * fit).toInt(), (vh * fit).toInt(), Gravity.CENTER))
+        }
+    }
+
+    /** Poster frame (for the blurred backdrop), size and length of a video; null if it can't be read. */
+    private fun decodeVideo(entry: ArtCache.Entry): Slide? {
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(entry.image.path)
+            fun meta(key: Int) = r.extractMetadata(key)?.toIntOrNull() ?: 0
+            val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            var w = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            var h = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            val rotation = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            if (rotation == 90 || rotation == 270) { val t = w; w = h; h = t }
+            if (durationMs <= 0 || w <= 0 || h <= 0) return null
+            val frame = r.getFrameAtTime(minOf(1_000_000L, durationMs * 500), MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            val backdrop = if (frame != null) {
+                val bh = (24f * frame.height / frame.width).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(frame, 24, bh, true).also { if (it !== frame) frame.recycle() }
+            } else {
+                Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888)   // black
+            }
+            return Slide(entry.art, null, backdrop, entry.image, w, h, durationMs)
+        } finally {
+            runCatching { r.release() }
+        }
     }
 
     private fun isNight(): Boolean {
@@ -298,7 +422,9 @@ class Slideshow(private val context: Context) {
      * cached so a just-changed picker never leaves a blank screen.
      */
     private fun playlist(): List<ArtCache.Entry> {
-        val all = cache.entries()
+        val mine = if (prefs.ownMode == Prefs.OWN_OFF) emptyList() else own.entries()
+        // "Only mine" with nothing added yet falls back to the museum art, never a blank screen.
+        val all = if (prefs.ownMode == Prefs.OWN_ONLY && mine.isNotEmpty()) mine else cache.entries() + mine
         val categoryOf = ArtSource.ALL.associate { it.id to it.category }
         val wanted = all.filter { e -> categoryOf[e.art.source]?.let(prefs::isCategoryOn) ?: true }
         val pool = if (prefs.favouritesOnly) wanted.filter { it.art.key in prefs.favourites } else wanted
@@ -353,6 +479,10 @@ class Slideshow(private val context: Context) {
         const val TAG = "ArtDream"
         const val FADE_MS = 2_000L
         const val RUN = 8
+        /** A video longer than this is cut here and the slideshow moves on. */
+        const val VIDEO_CAP_MS = 5 * 60_000L
+        /** Warm dim veil over videos at night (the bitmap [NIGHT_FILTER] can't apply to them). */
+        val NIGHT_VEIL = Color.argb(90, 40, 15, 0)
         /** Dim to ~75% and shift toward warm (less blue, a little less green). */
         val NIGHT_FILTER = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
             0.75f, 0f, 0f, 0f, 0f,
