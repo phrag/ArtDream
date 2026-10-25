@@ -56,7 +56,7 @@ class Slideshow(private val context: Context) {
         setTextColor(Color.GRAY)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
         gravity = Gravity.CENTER
-        text = "Fetching paintings…"
+        text = "Fetching pictures…"
         visibility = View.GONE
     }
     private val root = FrameLayout(context).apply {
@@ -201,8 +201,11 @@ class Slideshow(private val context: Context) {
             tag = slide   // so discard() can recycle its bitmaps
             addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(painting, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            if (prefs.showCaption) addView(caption(slide.art), FrameLayout.LayoutParams(
-                WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))
+            // CC BY / BY-SA images must stay attributed, so they keep a one-line
+            // credit even when captions are switched off.
+            val needsCredit = slide.art.license.startsWith("CC BY")
+            if (prefs.showCaption || needsCredit) addView(caption(slide.art, full = prefs.showCaption),
+                FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))
         }
         root.addView(slideView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
@@ -240,7 +243,8 @@ class Slideshow(private val context: Context) {
         slideView.tag = null
     }
 
-    private fun caption(art: Artwork): View {
+    /** Title/byline/credit; with [full] false only the attribution line. */
+    private fun caption(art: Artwork, full: Boolean): View {
         val pad = dp(48)
         fun line(text: String, sp: Float, style: Int) = TextView(context).apply {
             this.text = text
@@ -249,14 +253,23 @@ class Slideshow(private val context: Context) {
             setTypeface(Typeface.SERIF, style)
             setShadowLayer(8f, 0f, 2f, Color.BLACK)
         }
-        val credit = ArtSource.ALL.firstOrNull { it.id == art.source }?.label.orEmpty()
+        val sourceLabel = ArtSource.ALL.firstOrNull { it.id == art.source }?.label.orEmpty()
+        // Credit only when the byline doesn't already name the same person/agency.
+        val author = art.credit.takeIf { it.isNotEmpty() && it != art.artist }.orEmpty()
+        val creditLine = listOf(author, art.license, sourceLabel).filter { it.isNotEmpty() }.joinToString(" · ")
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
-            if (art.title.isNotEmpty()) addView(line(art.title, 22f, Typeface.ITALIC))
-            val byline = listOf(art.artist, art.date).filter { it.isNotEmpty() }.joinToString(", ")
-            if (byline.isNotEmpty()) addView(line(byline, 16f, Typeface.NORMAL))
-            if (credit.isNotEmpty()) addView(line(credit, 12f, Typeface.NORMAL))
+            if (full) {
+                if (art.title.isNotEmpty()) addView(line(art.title, 22f, Typeface.ITALIC))
+                val byline = listOf(art.artist, art.date).filter { it.isNotEmpty() }.joinToString(", ")
+                if (byline.isNotEmpty()) addView(line(byline, 16f, Typeface.NORMAL))
+                if (creditLine.isNotEmpty()) addView(line(creditLine, 12f, Typeface.NORMAL))
+            } else {
+                val attribution = listOf(art.artist.ifEmpty { art.credit }, art.license)
+                    .filter { it.isNotEmpty() }.joinToString(" · ")
+                addView(line(attribution, 11f, Typeface.NORMAL).apply { alpha = 0.7f })
+            }
         }
     }
 
