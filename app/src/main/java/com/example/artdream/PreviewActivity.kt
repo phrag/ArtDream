@@ -25,6 +25,10 @@ class PreviewActivity : Activity() {
 
     private lateinit var slideshow: Slideshow
     private lateinit var hint: TextView
+    private val prefs by lazy { Prefs(this) }
+    private val cache by lazy { ArtCache(this) }
+
+    private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,7 +37,7 @@ class PreviewActivity : Activity() {
 
         slideshow = Slideshow(this)
         hint = TextView(this).apply {
-            text = "Preview · → next image · any other button exits"
+            text = "Preview · → next · ↑ favourite · ↓ never show again · any other button exits"
             setTextColor(Color.argb(220, 255, 255, 255))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setShadowLayer(8f, 0f, 2f, Color.BLACK)
@@ -89,6 +93,15 @@ class PreviewActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_RIGHT -> slideshow.next()
+            KeyEvent.KEYCODE_DPAD_UP -> slideshow.currentArtwork?.let { art ->
+                val fav = prefs.toggleFavourite(art.key)
+                toast(if (fav) "Added to favourites" else "Removed from favourites")
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> slideshow.currentArtwork?.let { art ->
+                cache.block(art)
+                toast("Won't show this again")
+                slideshow.next()
+            }
             else -> finish()   // back, center, anything else: like a real screensaver
         }
         return true

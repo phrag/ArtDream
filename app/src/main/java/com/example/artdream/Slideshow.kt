@@ -74,6 +74,9 @@ class Slideshow(private val context: Context) {
     private var released = false
     private var generation = 0   // bumped per advance(); stale decode results are dropped
 
+    /** The artwork currently on screen, or null while nothing is shown. */
+    val currentArtwork: Artwork? get() = (current?.tag as? Slide)?.art
+
     fun start() {
         if (running || released) return
         running = true
@@ -239,7 +242,8 @@ class Slideshow(private val context: Context) {
         val all = cache.entries()
         val categoryOf = ArtSource.ALL.associate { it.id to it.category }
         val wanted = all.filter { e -> categoryOf[e.art.source]?.let(prefs::isCategoryOn) ?: true }
-        return wanted.ifEmpty { all }
+        val pool = if (prefs.favouritesOnly) wanted.filter { it.art.key in prefs.favourites } else wanted
+        return pool.ifEmpty { wanted.ifEmpty { all } }
     }
 
     /** Stop a slide's animations, detach it and free its bitmaps. Idempotent. */
