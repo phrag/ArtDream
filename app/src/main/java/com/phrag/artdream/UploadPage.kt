@@ -45,6 +45,7 @@ small{color:var(--dim)}
 <div class="row"><input id="yt" type="url" placeholder="https://www.youtube.com/watch?v=&hellip;" autocomplete="off">
 <button id="ytplay">Play link</button><button id="ytsave" class="quiet" hidden>Save to TV</button></div>
 <div id="ytmsg"></div>
+<ul id="jobs"></ul>
 <h2>On the TV now</h2>
 <small id="quota"></small>
 <ul id="have"></ul>
@@ -94,6 +95,10 @@ yt.onkeydown=function(e){if(e.key==='Enter')sendLink('stream');};
 function refresh(){
   fetch('list').then(function(r){return r.json();}).then(function(d){
     ytsave.hidden=!d.canDownload;
+    if(d.canDownload)document.getElementById('dlnote').textContent='“Save to TV” downloads it to the TV so it plays offline and without internet. YouTube’s terms only allow downloading through its own features, so that’s your call.';
+    var jobs=document.getElementById('jobs');jobs.textContent='';
+    d.jobs.slice().reverse().forEach(function(j){var li=el('li',j.failed?'err':(j.active?'':'done'));li.append(el('span','n',j.text));jobs.append(li);});
+    if(d.jobs.some(function(j){return j.active;}))setTimeout(refresh,1500);
     quota.textContent=mb(d.usedBytes)+' of '+mb(d.quotaBytes)+' used';
     have.textContent='';
     d.items.forEach(function(it){

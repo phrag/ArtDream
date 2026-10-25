@@ -13,6 +13,7 @@ import com.phrag.artdream.OwnMedia
 import com.phrag.artdream.Prefs
 import com.phrag.artdream.R
 import com.phrag.artdream.UploadServer
+import com.phrag.artdream.YouTubeDownloads
 import java.util.concurrent.Executors
 
 /**
@@ -110,6 +111,15 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
                 main.post { statusView.text = "Not added: ${name.ifEmpty { "file" }} — $reason"; statusView.setTextColor(ctx.getColor(R.color.ad_warn)) }
             }
             override fun onChanged() { main.post { reload() } }
+            override fun onJobs() {
+                main.post {
+                    val job = YouTubeDownloads.jobs().lastOrNull() ?: return@post
+                    statusView.text = job.describe()
+                    val failed = job.state == YouTubeDownloads.State.FAILED
+                    statusView.setTextColor(ctx.getColor(if (failed) R.color.ad_warn else R.color.ad_text))
+                    if (!job.active) reload()
+                }
+            }
         }, token)
         if (!s.start()) {
             addressView.text = ""

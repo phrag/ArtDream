@@ -2,7 +2,8 @@
 
 An Android TV screensaver that shows high-resolution, public-domain paintings
 from museum open-access collections. Built for NVIDIA Shield and stock Android TV
-boxes. Plain Kotlin, no third-party dependencies. GPL-3.0.
+boxes. Plain Kotlin; the one third-party library is NewPipeExtractor, used only to save YouTube
+videos (see [Your own pictures, videos and YouTube](#your-own-pictures-videos-and-youtube)). GPL-3.0.
 
 - Paintings are fitted to the screen over a blurred, dimmed copy of the same painting, so non-16:9 works still look good.
 - Slow Ken Burns drift and crossfades, which also help against OLED burn-in.
@@ -66,6 +67,46 @@ or when the server says its `Content-Type` isn't `image/*`. Nothing partial is k
 
 To add a source: add a class implementing `source/ArtSource.kt` and list it in `ArtSource.ALL`.
 
+## Your own pictures, videos and YouTube
+
+Settings → **My media** adds your own content to the screensaver. It's kept apart from the
+museum cache: never trimmed, never counted as a download, not hit by the Landscape-only filter,
+and only you remove it. Up to 3 GB in total (1 GB per file), and it never fills the TV's last 1 GB.
+"Show my media" is *Mixed* (with the art), *Only mine* (nothing is downloaded; art is used if you
+have none) or *Off*. Videos play muted unless you turn on *Sound on videos*, loop if shorter than
+the slide time, and are cut after 5 minutes.
+
+Three ways to add things:
+
+1. **From a phone or computer on the same Wi-Fi.** My media shows an address such as
+   `192.168.2.115:8765/k3m9x2qp/`. Open it in a browser and drop files on the page (jpg, png,
+   webp, gif, mp4, mkv, webm, mov). The page also has a **YouTube link** box. The upload server
+   only runs while that screen is open, serves only private-network addresses, needs the random
+   token in the URL, and checks each file's type, size and free space before keeping it.
+2. **With adb:** `adb push clip.mp4 /sdcard/Android/data/com.phrag.artdream/files/media/` (picked
+   up when the screensaver starts or My media opens; unusable files go to `rejected/`).
+3. **Sending a YouTube video from your computer:** `scripts/yt-to-tv.sh <address> <youtube-url>`
+   downloads it with [yt-dlp](https://github.com/yt-dlp/yt-dlp) (needs to be installed) and
+   uploads it, or `scripts/yt-to-tv.sh <address> --file <file>` sends a file.
+
+**YouTube links** have two modes on the page:
+
+- **Play link** streams the video in the screensaver through YouTube's embedded player (muted,
+  needs internet, may show ads, and not every video allows embedding; one that fails is skipped
+  and left out for 15 minutes). On the test TV a YouTube page loaded within ~30 s of another sat
+  idle for about 30 s before it started, so a non-YouTube slide is preferred right after one.
+- **Save to TV** downloads the video (best H.264 stream up to 1080p, plus AAC audio, joined
+  without re-encoding) so it plays offline like any other video. Some older videos only offer
+  H.264 up to 720p; their 1080p is VP9, which isn't used. This uses
+  [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0, pinned to a
+  release tag, with checksums in `gradle/verification-metadata.xml` because JitPack builds from
+  tags). YouTube changes break such libraries from time to time; if saving starts failing,
+  update the version. Keep My media open on the TV until it finishes.
+
+YouTube's terms of service only allow downloading through its own features, and the videos
+belong to their makers. Saving is offered as a convenience for videos you may keep (your own,
+Creative Commons, public domain); whether to use it is your call.
+
 ## Build
 
 ```bash
@@ -122,6 +163,10 @@ app/src/main/java/com/phrag/artdream/
 ├── Updater.kt           # self-update from the GitHub release
 ├── SettingsActivity.kt  # launcher entry and the screensaver's settings gear
 ├── Prefs.kt             # interval, captions, landscape-only, per-source toggles
+├── OwnMedia.kt          # the user's own pictures/videos/YouTube links (kept apart from ArtCache)
+├── UploadServer.kt / UploadPage.kt   # the "add from your phone" page (only while My media is open)
+├── YouTube.kt           # link parsing, oEmbed, the embedded-player page
+├── YouTubeDownloads.kt / StreamPicker.kt / Remux.kt / NewPipeDownloader.kt   # Save to TV
 ├── Artwork.kt / Http.kt
 └── source/              # one class per museum API
 ```

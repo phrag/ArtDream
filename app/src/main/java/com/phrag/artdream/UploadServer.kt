@@ -94,6 +94,8 @@ class UploadServer(
         fun onUploaded(name: String) {}
         fun onRejected(name: String, reason: String) {}
         fun onChanged() {}
+        /** A YouTube download started, moved on or finished. */
+        fun onJobs() {}
     }
 
     @Volatile var port = 0; private set
@@ -212,6 +214,11 @@ class UploadServer(
         val raw = req.query["url"].orEmpty()
         val id = YouTube.parseVideoId(raw)
             ?: return fail(out, 400, raw.take(60), "That doesn't look like a YouTube video link")
+        if (req.query["mode"] == "download") {
+            // Runs in the background; the page and the TV screen follow it through the job list.
+            val job = YouTubeDownloads.submit(own, id) { events.onJobs() }
+            return reply(out, 200, JSON, JSONObject().put("ok", true).put("name", job.title.ifBlank { id }).put("mode", "download").toString())
+        }
         val link = try {
             YouTube.oEmbed(id)
         } catch (e: HttpStatusException) {
@@ -255,7 +262,12 @@ class UploadServer(
         own.items().forEach {
             items.put(JSONObject().put("key", it.key).put("video", it.video).put("youtube", it.youtube).put("bytes", it.bytes))
         }
-        return JSONObject().put("items", items).put("usedBytes", own.usedBytes()).put("quotaBytes", OwnMedia.QUOTA_BYTES)
+        val jobs = JSONArray()
+        YouTubeDownloads.jobs().forEach {
+            jobs.put(JSONObject().put("id", it.id).put("active", it.active).put("failed", it.state == YouTubeDownloads.State.FAILED).put("text", it.describe()))
+        }
+        return JSONObject().put("items", items).put("jobs", jobs).put("canDownload", true)
+            .put("usedBytes", own.usedBytes()).put("quotaBytes", OwnMedia.QUOTA_BYTES)
     }
 
     private fun tokenMatches(given: String): Boolean =
