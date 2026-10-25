@@ -171,6 +171,7 @@ class UploadServer(
             req.method == "GET" && rest.isEmpty() -> reply(out, 200, "text/html; charset=utf-8", UploadPage.HTML)
             req.method == "GET" && rest == "list" -> reply(out, 200, JSON, listJson().toString())
             req.method == "PUT" && rest == "upload" -> upload(req, input, out)
+            req.method == "POST" && rest == "youtube" -> youtube(req, out)
             req.method == "POST" && rest == "delete" -> {
                 val ok = req.query["key"]?.let { own.remove(it) } ?: false
                 if (ok) events.onChanged()
@@ -183,6 +184,7 @@ class UploadServer(
     private fun upload(req: HttpRequest, input: InputStream, out: OutputStream) {
         val raw = req.query["name"].orEmpty()
         val name = OwnMedia.sanitizeName(raw)
+            ?.takeIf { OwnMedia.kindOf(it) != OwnMedia.Kind.YOUTUBE }   // links go through the link box
             ?: return fail(out, 415, raw, "Not a picture or video file (jpg, png, webp, gif, mp4, mkv, webm, mov)")
         val len = req.contentLength
         if (len < 0) return fail(out, 411, name, "No file size sent")
@@ -202,6 +204,30 @@ class UploadServer(
             fail(out, 422, name, e.message ?: "Rejected")
         } finally {
             part.delete()   // gone already after a successful add; this only cleans up failures
+        }
+    }
+
+    /** POST /<token>/youtube?url=…  — adds a YouTube link that streams in the screensaver. */
+    private fun youtube(req: HttpRequest, out: OutputStream) {
+        val raw = req.query["url"].orEmpty()
+        val id = YouTube.parseVideoId(raw)
+            ?: return fail(out, 400, raw.take(60), "That doesn't look like a YouTube video link")
+        val link = try {
+            YouTube.oEmbed(id)
+        } catch (e: HttpStatusException) {
+            if (e.code in 400..499) {
+                return fail(out, 422, id, "YouTube says this video is private, removed or can't be embedded")
+            }
+            YouTube.Link(id, "", "")   // YouTube having a bad moment; the link may still play later
+        } catch (e: IOException) {
+            YouTube.Link(id, "", "")   // couldn't reach YouTube to get a title; still add the link
+        }
+        try {
+            val item = own.addLink(link)
+            events.onUploaded(item.label)
+            reply(out, 200, JSON, JSONObject().put("ok", true).put("name", item.label).put("mode", "stream").toString())
+        } catch (e: OwnMedia.Rejected) {
+            fail(out, 422, id, e.message ?: "Rejected")
         }
     }
 
@@ -226,7 +252,9 @@ class UploadServer(
 
     private fun listJson(): JSONObject {
         val items = JSONArray()
-        own.items().forEach { items.put(JSONObject().put("key", it.key).put("video", it.video).put("bytes", it.bytes)) }
+        own.items().forEach {
+            items.put(JSONObject().put("key", it.key).put("video", it.video).put("youtube", it.youtube).put("bytes", it.bytes))
+        }
         return JSONObject().put("items", items).put("usedBytes", own.usedBytes()).put("quotaBytes", OwnMedia.QUOTA_BYTES)
     }
 

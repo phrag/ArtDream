@@ -154,7 +154,12 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
             "${items.size} item${if (items.size == 1) "" else "s"} · ${mb(used)} of ${mb(OwnMedia.QUOTA_BYTES)}"
         listBox.removeAllViews()
         for (item in items) {
-            val row = SettingRow(ctx, item.label, "${if (item.video) "Video" else "Picture"} · ${mb(item.bytes)}")
+            val sub = when {
+                item.youtube -> "YouTube link · streams from YouTube"
+                item.video -> "Video · ${mb(item.bytes)}"
+                else -> "Picture · ${mb(item.bytes)}"
+            }
+            val row = SettingRow(ctx, item.label, sub)
             row.setValue("Remove")
             row.setOnClickListener { confirmRemove(item) }
             listBox.addView(row)

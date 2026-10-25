@@ -29,6 +29,9 @@ li .s{color:var(--dim);font-size:14px;white-space:nowrap}
 li.err .s{color:var(--bad)} li.done .s{color:var(--ok)}
 progress{width:90px}
 h2{font-size:18px;margin:26px 0 4px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input[type=url]{flex:1;min-width:200px;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid #3a4150;background:var(--card);color:var(--text)}
+#ytmsg{margin:8px 0;min-height:1.4em;color:var(--ok)} #ytmsg.bad{color:var(--bad)}
 small{color:var(--dim)}
 </style></head><body><main>
 <h1>Add to ArtDream</h1>
@@ -37,6 +40,11 @@ small{color:var(--dim)}
 <span style="color:var(--dim)">jpg, png, webp, gif &middot; mp4, mkv, webm, mov</span>
 <input id="pick" type="file" multiple accept="image/*,video/*,.mkv,.webm,.mov,.mp4" hidden></div>
 <ul id="queue"></ul>
+<h2>YouTube link</h2>
+<p style="margin:0 0 8px">&ldquo;Play link&rdquo; streams it in the screensaver (the TV needs internet; no sound unless you turn it on). <span id="dlnote"></span></p>
+<div class="row"><input id="yt" type="url" placeholder="https://www.youtube.com/watch?v=&hellip;" autocomplete="off">
+<button id="ytplay">Play link</button><button id="ytsave" class="quiet" hidden>Save to TV</button></div>
+<div id="ytmsg"></div>
 <h2>On the TV now</h2>
 <small id="quota"></small>
 <ul id="have"></ul>
@@ -69,14 +77,29 @@ pick.onchange=function(){add(pick.files);pick.value='';};
 drop.ondragover=function(e){e.preventDefault();drop.classList.add('over');};
 drop.ondragleave=function(){drop.classList.remove('over');};
 drop.ondrop=function(e){e.preventDefault();drop.classList.remove('over');add(e.dataTransfer.files);};
+var yt=document.getElementById('yt'),ytmsg=document.getElementById('ytmsg'),ytsave=document.getElementById('ytsave');
+function sendLink(mode){
+  var u=yt.value.trim();if(!u)return;
+  ytmsg.className='';ytmsg.textContent='Working…';
+  fetch('youtube?mode='+mode+'&url='+encodeURIComponent(u),{method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok){ytmsg.textContent=(mode==='download'?'Saving: ':'Added: ')+d.name;yt.value='';refresh();}
+      else{ytmsg.className='bad';ytmsg.textContent=d.error||'Failed';}
+    }).catch(function(){ytmsg.className='bad';ytmsg.textContent='Connection lost';});
+}
+document.getElementById('ytplay').onclick=function(){sendLink('stream');};
+ytsave.onclick=function(){sendLink('download');};
+yt.onkeydown=function(e){if(e.key==='Enter')sendLink('stream');};
 function refresh(){
   fetch('list').then(function(r){return r.json();}).then(function(d){
+    ytsave.hidden=!d.canDownload;
     quota.textContent=mb(d.usedBytes)+' of '+mb(d.quotaBytes)+' used';
     have.textContent='';
     d.items.forEach(function(it){
       var li=el('li'),b=el('button','quiet','Remove');
       b.onclick=function(){b.disabled=true;fetch('delete?key='+encodeURIComponent(it.key),{method:'POST'}).then(refresh);};
-      li.append(el('span','n',it.key),el('span','s',(it.video?'video':'picture')+' · '+mb(it.bytes)),b);
+      li.append(el('span','n',it.youtube?it.key.replace(/\.yt$/,''):it.key),el('span','s',it.youtube?'YouTube link':(it.video?'video':'picture')+' · '+mb(it.bytes)),b);
       have.append(li);
     });
     if(!d.items.length)have.append(el('li',null,'Nothing yet'));

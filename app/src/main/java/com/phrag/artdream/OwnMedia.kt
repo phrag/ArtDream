@@ -14,7 +14,10 @@ import java.io.File
  */
 class OwnMedia(ctx: Context) {
 
-    class Item(val key: String, val file: File, val video: Boolean) {
+    class Item(val key: String, val file: File, val kind: Kind) {
+        val video: Boolean get() = kind == Kind.VIDEO
+        /** A YouTube link (".yt" file) played as a live stream, not a file on the TV. */
+        val youtube: Boolean get() = kind == Kind.YOUTUBE
         val addedAt: Long get() = file.lastModified()
         val bytes: Long get() = file.length()
         /** What the list shows: the file name without its extension. */
@@ -31,7 +34,7 @@ class OwnMedia(ctx: Context) {
 
     fun items(): List<Item> =
         (dir.listFiles { f -> f.isFile && kindOf(f.name) != null } ?: emptyArray())
-            .map { Item(it.name, it, kindOf(it.name) == Kind.VIDEO) }
+            .map { Item(it.name, it, kindOf(it.name)!!) }
             .sortedByDescending { it.addedAt }
 
     /** The same items as slideshow entries (the slideshow only knows [ArtCache.Entry]). */
@@ -66,12 +69,25 @@ class OwnMedia(ctx: Context) {
                 if (b.outWidth <= 0 || b.outHeight <= 0) throw Rejected("$clean is not a picture the TV can open")
             }
             Kind.VIDEO -> checkVideo(file, clean)
+            Kind.YOUTUBE -> if (YouTube.readLink(file.readText()) == null) throw Rejected("$clean is not a YouTube link file")
         }
         val target = uniqueFile(clean)
         if (!file.renameTo(target) && !(file.copyTo(target, overwrite = false).exists() && file.delete())) {
             throw Rejected("Couldn't save $clean")
         }
-        return Item(target.name, target, kind == Kind.VIDEO)
+        return Item(target.name, target, kind)
+    }
+
+    /** The item already playing this YouTube video, if any (one link per video). */
+    fun findYouTube(id: String): Item? = items().firstOrNull { it.youtube && youtubeId(it.file) == id }
+
+    /** Adds a link to [link]'s video, or returns the one already there. */
+    fun addLink(link: YouTube.Link): Item {
+        findYouTube(link.id)?.let { return it }
+        if (!hasRoomFor(0)) throw Rejected("Out of space for your own media")
+        val target = uniqueFile(YouTube.fileName(link))
+        target.writeText(link.toJson())
+        return Item(target.name, target, Kind.YOUTUBE)
     }
 
     private fun checkVideo(file: File, name: String) {
@@ -134,7 +150,7 @@ class OwnMedia(ctx: Context) {
         dir.listFiles { f -> f.name.endsWith(".part") }?.forEach { it.delete() }
     }
 
-    enum class Kind { IMAGE, VIDEO }
+    enum class Kind { IMAGE, VIDEO, YOUTUBE }
 
     companion object {
         private const val TAG = "ArtDream"
@@ -152,11 +168,18 @@ class OwnMedia(ctx: Context) {
         fun kindOf(name: String): Kind? = when (name.substringAfterLast('.', "").lowercase()) {
             in IMAGE_EXT -> Kind.IMAGE
             in VIDEO_EXT -> Kind.VIDEO
+            "yt" -> Kind.YOUTUBE
             else -> null
         }
 
         fun isVideo(entry: ArtCache.Entry): Boolean =
             entry.art.source == SOURCE && kindOf(entry.image.name) == Kind.VIDEO
+
+        fun isYouTube(entry: ArtCache.Entry): Boolean =
+            entry.art.source == SOURCE && kindOf(entry.image.name) == Kind.YOUTUBE
+
+        /** The video id inside a ".yt" file, or null if the file is unreadable or invalid. */
+        fun youtubeId(file: File): String? = try { YouTube.readLink(file.readText())?.id } catch (_: Exception) { null }
 
         /**
          * A safe file name from whatever the sender called it: no folders or "..", only plain
