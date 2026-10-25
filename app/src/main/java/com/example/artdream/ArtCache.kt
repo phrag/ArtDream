@@ -73,6 +73,7 @@ class ArtCache(ctx: Context) {
             var rounds = 0
             while (added < want && rounds++ < 5 && !Thread.currentThread().isInterrupted) {
                 for (src in sources.shuffled()) {
+                    if (Thread.currentThread().isInterrupted) break
                     listener?.onStatus("Asking ${src.label}…")
                     val batch = try {
                         src.fetchBatch(BATCH, Random.Default)
