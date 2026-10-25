@@ -118,6 +118,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         val setup = buildSetupPane()
         addSection("Setup", setup, { firstFocusableIn(setup) }) {}
 
+        Updater(this).check()   // offers a newer GitHub build, if any
         setContentView(root)
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
             val s = sections.getOrNull(current) ?: return@addOnGlobalFocusChangeListener
