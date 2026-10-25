@@ -30,18 +30,25 @@ object MetSource : ArtSource {
 
         return (0 until ids.length()).mapNotNull { i ->
             try {
-                val o = JSONObject(Http.getString("$BASE/v1/objects/${ids.get(i)}"))
-                val img = o.str("primaryImage")
-                if (!o.optBoolean("isPublicDomain") || img.isEmpty()) return@mapNotNull null
-                Artwork(
-                    source = id, id = o.get("objectID").toString(),
-                    title = o.str("title"), artist = o.str("artistDisplayName"), date = o.str("objectDate"),
-                    imageUrls = listOf(img),   // Met doesn't report pixel size; checked after download
-                )
+                parse(JSONObject(Http.getString("$BASE/v1/objects/${ids.get(i)}")))
             } catch (e: Exception) {
                 Log.w("ArtDream", "met object ${ids.get(i)}: $e")
                 null
             }
         }
     }
+
+    /** A /v1/objects/{id} response to an Artwork; null if not public domain or no image. */
+    internal fun parse(o: JSONObject): Artwork? {
+        val img = o.str("primaryImage")
+        if (!o.optBoolean("isPublicDomain") || img.isEmpty()) return null
+        return Artwork(
+            source = id, id = o.get("objectID").toString(),
+            title = o.str("title"), artist = o.str("artistDisplayName"), date = o.str("objectDate"),
+            imageUrls = listOf(img),   // Met doesn't report pixel size; checked after download
+        )
+    }
+
+    /** Fetch one object by id (used by the curated Masterpieces list). */
+    fun fetchOne(objectId: Int): Artwork? = parse(JSONObject(Http.getString("$BASE/v1/objects/$objectId")))
 }

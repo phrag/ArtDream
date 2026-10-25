@@ -20,6 +20,10 @@ author + licence are carried in the artwork (`credit`, `license`) for the captio
 | Cleveland Museum of Art | Paintings | `openaccess-api.clevelandart.org/api/artworks/?cc0=1&type=Painting` | ~3400 px "print" JPEG |
 | The Met (European Paintings) | Paintings | `collectionapi.metmuseum.org/public/collection/v1.1/search` | full original, downscaled to ≤4096 px |
 | Art Institute of Chicago | Paintings | `api.artic.edu/api/v1/artworks/search` + IIIF | 1686 px (843 px fallback) |
+| Rijksmuseum | Paintings | `data.rijksmuseum.nl/search/collection?type=painting&imageAvailable=true` + one Linked Art JSON-LD fetch per object | IIIF (`iiif.micr.io`), 3000 px wide |
+| SMK, Copenhagen | Paintings | `api.smk.dk/api/v1/art/search/?filters=[public_domain:true],[object_names:maleri]` | IIIF (`iip.smk.dk`), fits 3000 px |
+| National Gallery of Art, Washington | Paintings | bundled list of 2906 open-access paintings (`src/main/resources/nga_paintings.tsv`) + IIIF at `api.nga.gov/iiif` | fits 3000 px (1500 px fallback) |
+| Masterpieces (curated) | Paintings | hard-coded list of ~35 famous works (van Gogh, Vermeer, Monet, Caravaggio...) resolved through the Met, Cleveland and AIC object endpoints | same as those sources |
 | NASA Image Library (space) | Space | `images-api.nasa.gov/search?media_type=image&q=...` | `~orig` (typically 2000-8000 px), falls back to 1920 px `~large` |
 | NASA Image Library (Earth) | Landscapes & nature | same, Earth/landscape queries | same |
 | Wikimedia Commons featured pictures (nature) | Landscapes & nature | `commons.wikimedia.org/w/api.php` (`generator=categorymembers`, `imageinfo`) | 3000 px JPEG thumbnail |
@@ -36,13 +40,22 @@ Notes:
   (`extmetadata.LicenseShortName`) is checked per file. Shared/datacenter IPs can get
   HTTP 429 from Wikimedia; the batch then fails and is retried later.
 
-Ideas for more sources: Rijksmuseum, SMK (Denmark), National Gallery of Art (DC).
-Add a class implementing `source/ArtSource.kt` and list it in `ArtSource.ALL`.
+- Rijksmuseum: the old key-based `/api/en/collection` now returns 410 Gone. The source uses the
+  new keyless Linked Art service; only objects whose image carries the Public Domain Mark are used.
+- NGA publishes no search API, only 80+ MB CSV dumps (github.com/NationalGalleryOfArt/opendata), so
+  the list of open-access paintings (openaccess=1, classification=Painting, short side >= 1500 px)
+  was extracted once into `nga_paintings.tsv`; regenerate it from `objects.csv` and
+  `published_images.csv` to pick up new acquisitions. Images are fetched live over IIIF.
+- SMK: works without an IIIF image id (thumbnail only) are skipped.
+- Masterpieces: ids were checked against the live APIs; a work that disappears is skipped.
+
+To add a source: add a class implementing `source/ArtSource.kt` and list it in `ArtSource.ALL`.
 
 ## Build
 
 ```bash
 ./gradlew :app:assembleDebug     # or open in Android Studio → Build APK
+./gradlew :app:testDebugUnitTest # parser tests against saved API responses
 ```
 
 CI (`.github/workflows/build.yml`) builds and lints every push and pull request.
