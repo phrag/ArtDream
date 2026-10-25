@@ -12,6 +12,7 @@ enum class Category(val label: String) {
     PAINTINGS("Paintings"),
     LANDSCAPES("Landscapes & nature"),
     SPACE("Space"),
+    CITIES("Cities & architecture"),
 }
 
 /**
@@ -27,6 +28,10 @@ interface ArtSource {
     fun fetchBatch(count: Int, rnd: Random): List<Artwork>
 
     companion object {
-        val ALL: List<ArtSource> = listOf(ClevelandSource, MetSource, ArticSource)
+        val ALL: List<ArtSource> = listOf(
+            ClevelandSource, MetSource, ArticSource,
+            NasaSpaceSource, NasaEarthSource,
+            WikimediaLandscapesSource, WikimediaSpaceSource, WikimediaCitiesSource,
+        )
     }
 }
