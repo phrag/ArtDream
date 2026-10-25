@@ -55,7 +55,10 @@ class OwnMedia(ctx: Context) {
     fun add(file: File, name: String): Item {
         val clean = sanitizeName(name) ?: throw Rejected("Not a picture or video file: $name")
         val kind = kindOf(clean)!!
-        if (!hasRoomFor(0)) throw Rejected("Out of space for your own media")
+        // The file is already on disk, so only the quota (not free space) is left to check.
+        if (usedBytes() + file.length() > QUOTA_BYTES) {
+            throw Rejected("That would go over the ${QUOTA_BYTES / (1024 * 1024 * 1024)} GB limit for your own media")
+        }
         when (kind) {
             Kind.IMAGE -> {
                 val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }

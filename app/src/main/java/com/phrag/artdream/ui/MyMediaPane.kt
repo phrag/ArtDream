@@ -1,0 +1,180 @@
+package com.phrag.artdream.ui
+
+import android.app.AlertDialog
+import android.content.Context
+import android.graphics.Typeface
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import com.phrag.artdream.OwnMedia
+import com.phrag.artdream.Prefs
+import com.phrag.artdream.R
+import com.phrag.artdream.UploadServer
+import java.util.concurrent.Executors
+
+/**
+ * "My media": the user's own pictures and videos. Shows how they mix with the museum art, the
+ * address to open on a phone or computer to add files (the upload server only runs while this
+ * screen is showing), and what's on the TV, where OK removes an item.
+ */
+class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private val own: OwnMedia) {
+
+    val view = ScrollView(ctx).apply { isFillViewport = true; clipToPadding = false; isVerticalScrollBarEnabled = false }
+
+    private val main = Handler(Looper.getMainLooper())
+    private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "artdream-mymedia").apply { isDaemon = true } }
+
+    private val modeRow = SettingRow(ctx, "Show my media")
+    private val soundRow = SettingRow.toggle(ctx, "Sound on videos", "Off keeps the screensaver quiet", prefs.videoSound) {
+        prefs.videoSound = it
+    }
+    private val addressView = Ui.text(ctx, "", Ui.HEADER_SP).apply {
+        typeface = Typeface.MONOSPACE
+        setPadding(0, ctx.dp(6), 0, ctx.dp(6))
+    }
+    private val statusView = Ui.text(ctx, "", Ui.BODY_SP, R.color.ad_text2)
+    private val usedView = Ui.body(ctx, "")
+    private val listBox = Ui.column(ctx).apply { clipChildren = false; clipToPadding = false }
+    private val adbView = Ui.text(ctx, "", Ui.SMALL_SP, R.color.ad_text3).apply { typeface = Typeface.MONOSPACE }
+
+    private var server: UploadServer? = null
+    private val token = UploadServer.newToken()   // stable while the app is open
+    private var shown = false
+    private var started = false
+
+    init {
+        val col = Ui.column(ctx).apply {
+            setPadding(ctx.dp(LibraryPane.PAD), ctx.dp(36), ctx.dp(LibraryPane.PAD), ctx.dp(48))
+            clipChildren = false
+            clipToPadding = false
+        }
+        col.addView(Ui.header(ctx, "My media"))
+        col.addView(Ui.body(ctx, "Your own pictures and videos can play in the screensaver, mixed in with the art or on their own."))
+        col.addView(Ui.spacer(ctx, 6))
+        renderMode()
+        modeRow.setOnClickListener {
+            prefs.ownMode = when (prefs.ownMode) {
+                Prefs.OWN_MIX -> Prefs.OWN_ONLY
+                Prefs.OWN_ONLY -> Prefs.OWN_OFF
+                else -> Prefs.OWN_MIX
+            }
+            renderMode()
+        }
+        col.addView(modeRow)
+        col.addView(soundRow)
+
+        col.addView(Ui.groupLabel(ctx, "Add from your phone or computer"))
+        col.addView(Ui.body(ctx, "On a device on the same Wi-Fi, open this address in a browser:"))
+        col.addView(addressView)
+        col.addView(statusView)
+
+        col.addView(Ui.groupLabel(ctx, "On this TV"))
+        col.addView(usedView)
+        col.addView(listBox)
+
+        col.addView(Ui.groupLabel(ctx, "Or copy files with adb"))
+        col.addView(adbView)
+        view.addView(col)
+        render(emptyList())
+    }
+
+    /** The row to focus when the pane is entered with the D-pad. */
+    fun firstFocusable(): View = modeRow
+
+    /** The pane became visible or hidden in the settings. */
+    fun setShown(on: Boolean) {
+        shown = on
+        sync()
+    }
+
+    /** The activity is in the foreground (between onStart and onStop). */
+    fun setStarted(on: Boolean) {
+        started = on
+        sync()
+    }
+
+    private fun sync() {
+        if (shown && started) startServer() else stopServer()
+    }
+
+    private fun startServer() {
+        if (server != null) return
+        val s = UploadServer(own, object : UploadServer.Events {
+            override fun onUploaded(name: String) {
+                main.post { statusView.text = "Added $name"; statusView.setTextColor(ctx.getColor(R.color.ad_text)); reload() }
+            }
+            override fun onRejected(name: String, reason: String) {
+                main.post { statusView.text = "Not added: ${name.ifEmpty { "file" }} — $reason"; statusView.setTextColor(ctx.getColor(R.color.ad_warn)) }
+            }
+            override fun onChanged() { main.post { reload() } }
+        }, token)
+        if (!s.start()) {
+            addressView.text = ""
+            statusView.text = "Couldn't start the upload page (no free port)."
+            reload()
+            return
+        }
+        server = s
+        val urls = s.urls()
+        addressView.text = urls.joinToString("\n") { it.removePrefix("http://") }
+        statusView.setTextColor(ctx.getColor(R.color.ad_text2))
+        statusView.text = if (urls.isEmpty()) "No network address found. Connect the TV to Wi-Fi or Ethernet."
+            else "Waiting for files…  (Only works while this screen is open. The address changes when the app restarts.)"
+        reload()
+    }
+
+    private fun stopServer() {
+        server?.stop()
+        server = null
+    }
+
+    private fun reload() {
+        io.execute {
+            own.importPending()
+            val items = own.items()
+            val used = own.usedBytes()
+            main.post { render(items, used) }
+        }
+    }
+
+    private fun renderMode() {
+        modeRow.setValue(when (prefs.ownMode) { Prefs.OWN_ONLY -> "Only mine"; Prefs.OWN_OFF -> "Off"; else -> "Mixed" })
+        modeRow.setSub(when (prefs.ownMode) {
+            Prefs.OWN_ONLY -> "Only your pictures and videos; nothing is downloaded (art is used if you have none)"
+            Prefs.OWN_OFF -> "Your pictures and videos are kept but not shown"
+            else -> "Your pictures and videos play along with the art"
+        })
+    }
+
+    private fun render(items: List<OwnMedia.Item>, used: Long = 0L) {
+        usedView.text = if (items.isEmpty()) "Nothing added yet." else
+            "${items.size} item${if (items.size == 1) "" else "s"} · ${mb(used)} of ${mb(OwnMedia.QUOTA_BYTES)}"
+        listBox.removeAllViews()
+        for (item in items) {
+            val row = SettingRow(ctx, item.label, "${if (item.video) "Video" else "Picture"} · ${mb(item.bytes)}")
+            row.setValue("Remove")
+            row.setOnClickListener { confirmRemove(item) }
+            listBox.addView(row)
+        }
+        adbView.text = "adb push <file> ${own.importDir?.path ?: "(no storage)"}/"
+    }
+
+    private fun confirmRemove(item: OwnMedia.Item) {
+        AlertDialog.Builder(ctx)
+            .setTitle("Remove “${item.label}”?")
+            .setMessage("It's deleted from this TV.")
+            .setPositiveButton("Remove") { _, _ ->
+                io.execute { own.remove(item.key); main.post { reload(); modeRow.requestFocus() } }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun mb(bytes: Long): String = when {
+        bytes >= 1L shl 30 -> "%.1f GB".format(bytes / (1L shl 30).toDouble())
+        else -> "%d MB".format((bytes / (1L shl 20)).coerceAtLeast(if (bytes > 0) 1 else 0))
+    }
+}
