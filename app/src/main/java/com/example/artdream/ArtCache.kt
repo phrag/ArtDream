@@ -17,17 +17,35 @@ import kotlin.random.Random
  */
 class ArtCache(ctx: Context) {
 
-    class Entry(val art: Artwork, val image: File)
+    class Entry(val art: Artwork, val image: File) {
+        val addedAt: Long get() = image.lastModified()
+    }
+
+    /**
+     * Progress callbacks for [refresh]. Called on the refreshing thread — post
+     * to the main thread before touching views.
+     */
+    interface Listener {
+        /** A source call started, e.g. "Asking The Met…". */
+        fun onStatus(message: String) {}
+        /** One image saved; [added] of [wanted] so far. */
+        fun onAdded(entry: Entry, added: Int, wanted: Int) {}
+        /** A source's batch request failed (network, HTTP error, bad JSON). */
+        fun onSourceFailed(source: ArtSource, error: Exception) {}
+    }
 
     private val dir = File(ctx.filesDir, "art").apply { mkdirs() }
     private val prefs = Prefs(ctx)
 
+    /** All cached images, newest first. */
     fun entries(): List<Entry> =
         (dir.listFiles { f -> f.extension == "json" } ?: emptyArray()).mapNotNull { meta ->
             val img = File(dir, meta.nameWithoutExtension + ".jpg")
             if (!img.exists()) return@mapNotNull null
             runCatching { Entry(Artwork.fromJson(JSONObject(meta.readText())), img) }.getOrNull()
-        }
+        }.sortedByDescending { it.addedAt }
+
+    val isRefreshing: Boolean get() = running.get()
 
     fun count(): Int = dir.list { _, name -> name.endsWith(".jpg") }?.size ?: 0
 
@@ -39,14 +57,15 @@ class ArtCache(ctx: Context) {
     /**
      * Fetch up to [FRESH_PER_RUN] new paintings (more if the cache is short of
      * [TARGET]), then trim the oldest down to [MAX] so the rotation keeps moving.
-     * Returns how many were added. Safe to call from several places; only one
-     * run happens at a time.
+     * Returns how many were added, or [ALREADY_RUNNING] if another refresh (e.g.
+     * the screensaver's) is in progress. Only one run happens at a time.
+     * Only sources whose category and own toggle are both on are used.
      */
-    fun refresh(): Int {
-        if (!running.compareAndSet(false, true)) return 0
+    fun refresh(listener: Listener? = null): Int {
+        if (!running.compareAndSet(false, true)) return ALREADY_RUNNING
         try {
             dir.listFiles { f -> f.extension == "part" }?.forEach { it.delete() }
-            val sources = ArtSource.ALL.filter { prefs.isSourceOn(it.id) }
+            val sources = enabledSources()
             if (sources.isEmpty()) return 0
 
             val want = maxOf(FRESH_PER_RUN, TARGET - count())
@@ -54,26 +73,38 @@ class ArtCache(ctx: Context) {
             var rounds = 0
             while (added < want && rounds++ < 5 && !Thread.currentThread().isInterrupted) {
                 for (src in sources.shuffled()) {
+                    listener?.onStatus("Asking ${src.label}…")
                     val batch = try {
                         src.fetchBatch(BATCH, Random.Default)
                     } catch (e: Exception) {
                         Log.w(TAG, "${src.id} batch failed: $e")
+                        listener?.onSourceFailed(src, e)
                         continue
                     }
+                    Log.i(TAG, "${src.id}: batch of ${batch.size}")
                     for (art in batch) {
                         if (added >= want || Thread.currentThread().isInterrupted) break
                         if (File(dir, art.key + ".json").exists()) continue
                         if (prefs.landscapeOnly && art.width > 0 && art.width < art.height) continue
-                        if (download(art)) added++
+                        listener?.onStatus("Downloading “${art.title.ifEmpty { "untitled" }}”")
+                        if (download(art)) {
+                            added++
+                            Log.i(TAG, "saved ${art.key} ($added/$want)")
+                            listener?.onAdded(Entry(art, File(dir, art.key + ".jpg")), added, want)
+                        }
                     }
                 }
             }
             trim()
+            Log.i(TAG, "refresh done: added $added of $want, ${count()} cached")
             return added
         } finally {
             running.set(false)
         }
     }
+
+    fun enabledSources(): List<ArtSource> =
+        ArtSource.ALL.filter { prefs.isCategoryOn(it.category) && prefs.isSourceOn(it.id) }
 
     private fun download(art: Artwork): Boolean {
         val part = File(dir, art.key + ".part")
@@ -85,6 +116,7 @@ class ArtCache(ctx: Context) {
                     File(dir, art.key + ".json").writeText(art.toJson().toString())
                     return true
                 }
+                Log.i(TAG, "rejected ${art.key} (not landscape or undecodable)")
                 part.delete()
                 return false   // decoded fine but rejected (e.g. portrait); smaller copy won't help
             } catch (e: Exception) {
@@ -129,6 +161,7 @@ class ArtCache(ctx: Context) {
         const val FRESH_PER_RUN = 8
         const val BATCH = 10
         const val MAX_EDGE = 4096
+        const val ALREADY_RUNNING = -1
         private val running = AtomicBoolean(false)
     }
 }

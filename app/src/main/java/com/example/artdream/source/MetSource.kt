@@ -15,6 +15,7 @@ import kotlin.random.Random
 object MetSource : ArtSource {
     override val id = "met"
     override val label = "The Met"
+    override val category = Category.PAINTINGS
 
     private const val BASE = "https://collectionapi.metmuseum.org/public/collection"
     private const val SEARCH = "$BASE/v1.1/search?departmentId=11&hasImages=true&isPublicDomain=true&q=painting"

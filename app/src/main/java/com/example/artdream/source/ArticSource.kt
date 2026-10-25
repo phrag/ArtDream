@@ -19,6 +19,7 @@ import kotlin.random.Random
 object ArticSource : ArtSource {
     override val id = "artic"
     override val label = "Art Institute of Chicago"
+    override val category = Category.PAINTINGS
 
     private const val IIIF = "https://www.artic.edu/iiif/2"
 

@@ -69,7 +69,7 @@ class SettingsActivity : Activity() {
                     val added = cache.refresh()
                     runOnUiThread {
                         isEnabled = true
-                        updateCacheInfo(if (added == 0) "No new paintings (offline or all sources off?)" else "Added $added.")
+                        updateCacheInfo(if (added <= 0) "No new paintings (offline or all sources off?)" else "Added $added.")
                     }
                 }
             }

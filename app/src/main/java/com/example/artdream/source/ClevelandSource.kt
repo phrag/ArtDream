@@ -10,6 +10,7 @@ import kotlin.random.Random
 object ClevelandSource : ArtSource {
     override val id = "cma"
     override val label = "Cleveland Museum of Art"
+    override val category = Category.PAINTINGS
 
     private const val BASE = "https://openaccess-api.clevelandart.org/api/artworks/?cc0=1&has_image=1&type=Painting"
 
