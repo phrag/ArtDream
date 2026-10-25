@@ -126,7 +126,9 @@ class SettingRow(ctx: Context, label: String, sub: String? = null, indent: Boole
             marginStart = ctx.dp(if (indent) 24 else 0)
         }
 
-        val texts = Ui.column(ctx)
+        // The children copy their parent's state, so this column has to copy the row's;
+        // otherwise they never see "focused" and stay light on the white focus card.
+        val texts = Ui.column(ctx).apply { isDuplicateParentStateEnabled = true }
         labelView = Ui.text(ctx, label, if (indent) Ui.BODY_SP + 1 else Ui.LABEL_SP).apply {
             isDuplicateParentStateEnabled = true
             setTextColor(ctx.getColorStateList(R.color.ad_btn_text))
