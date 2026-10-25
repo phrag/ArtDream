@@ -26,6 +26,14 @@
             </intent-filter>
         </activity>
 
+        <!-- "Test screensaver": runs the same slideshow in a normal activity.
+             Launched from Settings only. -->
+        <activity
+            android:name=".PreviewActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+
         <!-- The screensaver itself. Shows up under Settings > Screen saver on
              stock Android TV / Shield; on Google TV set it via adb (see README). -->
         <service
