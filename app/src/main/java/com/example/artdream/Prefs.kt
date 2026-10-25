@@ -34,6 +34,11 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("max_stored", 120)
         set(v) = sp.edit().putInt("max_stored", v).apply()
 
+    /** Top the cache up once a day in the background (JobScheduler), not just at screensaver start. */
+    var backgroundRefresh: Boolean
+        get() = sp.getBoolean("background_refresh", true)
+        set(v) = sp.edit().putBoolean("background_refresh", v).apply()
+
     fun isSourceOn(id: String): Boolean = sp.getBoolean("src_$id", true)
     fun setSourceOn(id: String, on: Boolean) = sp.edit().putBoolean("src_$id", on).apply()
 

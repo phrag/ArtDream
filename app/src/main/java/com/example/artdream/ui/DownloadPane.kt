@@ -74,6 +74,12 @@ class DownloadPane(
             refreshSettings()
         }
     }
+    private val backgroundRow = SettingRow.toggle(ctx, "Refresh in the background",
+        "Fetch new images about once a day while the TV is idle, so the screensaver never waits",
+        prefs.backgroundRefresh) {
+        prefs.backgroundRefresh = it
+        com.example.artdream.RefreshJobService.schedule(ctx)
+    }
     private var shown = false
     private var stripKeys: List<String> = emptyList()
 
@@ -87,6 +93,7 @@ class DownloadPane(
         col.addView(intro)
         col.addView(perRunRow)
         col.addView(maxRow)
+        col.addView(backgroundRow)
         col.addView(Ui.spacer(ctx, 12))
         col.addView(noSourcesWarning, Ui.lp().apply { bottomMargin = ctx.dp(12) })
 
