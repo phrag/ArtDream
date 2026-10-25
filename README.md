@@ -37,14 +37,20 @@ Smithsonian Open Access (needs a free api.data.gov key). Add a class implementin
 ```
 
 CI (`.github/workflows/build.yml`) builds and lints every push and pull request.
-The debug APK is attached to each run as the `artdream-debug-apk` artifact
-(Actions tab → pick a run → Artifacts).
+Every push to `main` also refreshes the **Latest build** release, so the newest APK
+is always at a public, no-login link:
+
+https://github.com/phrag/ArtDream/releases/latest/download/artdream.apk
+
+(Branch and PR builds are only available as run artifacts, which need a GitHub login.)
+Builds are signed with the committed `app/debug.keystore`, so a new APK installs
+over the old one without losing the downloaded paintings.
 
 ## Install and enable
 
 ```bash
 adb connect <tv-ip>:5555
-adb install app/build/outputs/apk/debug/app-debug.apk
+adb install -r artdream.apk   # or app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Open **ArtDream** from the home screen once and press **Download more paintings now**.
