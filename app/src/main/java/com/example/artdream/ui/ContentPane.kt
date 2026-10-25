@@ -41,9 +41,8 @@ class ContentPane(
             clipToPadding = false
         }
         col.addView(Ui.header(ctx, "Content"))
-        col.addView(Ui.body(ctx, "Choose which kinds of images to show. New downloads only use the types " +
-            "and sources switched on here; images already in your library stay until they rotate out " +
-            "or you remove them."))
+        col.addView(Ui.body(ctx, "Choose which kinds of images to show. The screensaver only shows images " +
+            "from the types switched on here, and new downloads only use these types and sources."))
         col.addView(Ui.spacer(ctx, 8))
         col.addView(globalWarning, Ui.lp().apply { topMargin = ctx.dp(8) })
 

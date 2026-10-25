@@ -125,7 +125,7 @@ class Slideshow(private val context: Context) {
         if (!running) return
         val gen = ++generation
         main.removeCallbacksAndMessages(null)
-        if (queue.isEmpty()) queue.addAll(cache.entries().shuffled())
+        if (queue.isEmpty()) queue.addAll(playlist().shuffled())
         val next = queue.removeFirstOrNull()
         if (next == null) {
             status.visibility = View.VISIBLE
@@ -229,6 +229,17 @@ class Slideshow(private val context: Context) {
             .setDuration(intervalMs + FADE_MS)
 
         main.postDelayed(::advance, intervalMs)
+    }
+
+    /**
+     * Cached images whose category is switched on. Falls back to everything
+     * cached so a just-changed picker never leaves a blank screen.
+     */
+    private fun playlist(): List<ArtCache.Entry> {
+        val all = cache.entries()
+        val categoryOf = ArtSource.ALL.associate { it.id to it.category }
+        val wanted = all.filter { e -> categoryOf[e.art.source]?.let(prefs::isCategoryOn) ?: true }
+        return wanted.ifEmpty { all }
     }
 
     /** Stop a slide's animations, detach it and free its bitmaps. Idempotent. */

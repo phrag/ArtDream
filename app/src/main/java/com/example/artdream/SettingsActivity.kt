@@ -406,7 +406,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         }
         try {
             // PreviewActivity lands in a parallel branch; switch to a class reference once merged.
-            startActivity(Intent().setClassName(this, "com.example.artdream.PreviewActivity"))
+            startActivity(Intent(this, PreviewActivity::class.java))
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(this, "Preview isn't available in this version. Use Setup → Open screensaver settings.",
                 Toast.LENGTH_LONG).show()

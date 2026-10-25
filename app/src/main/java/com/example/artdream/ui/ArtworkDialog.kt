@@ -67,8 +67,10 @@ class ArtworkDialog(
         val byline = listOf(art.artist, art.date).filter { it.isNotBlank() }.joinToString(" · ")
         if (byline.isNotEmpty()) texts.addView(Ui.text(ctx, byline, Ui.LABEL_SP, R.color.ad_text2).apply { maxLines = 2 })
         val sourceLabel = ArtSource.ALL.firstOrNull { it.id == art.source }?.label ?: art.source
-        if (sourceLabel.isNotBlank()) {
-            texts.addView(Ui.text(ctx, sourceLabel, Ui.SMALL_SP, R.color.ad_text3).apply {
+        val author = art.credit.takeIf { it.isNotBlank() && it != art.artist }.orEmpty()
+        val creditLine = listOf(author, art.license, sourceLabel).filter { it.isNotBlank() }.joinToString(" · ")
+        if (creditLine.isNotBlank()) {
+            texts.addView(Ui.text(ctx, creditLine, Ui.SMALL_SP, R.color.ad_text3).apply {
                 setPadding(0, ctx.dp(6), 0, 0)
             })
         }
