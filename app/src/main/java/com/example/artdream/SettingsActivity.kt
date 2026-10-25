@@ -23,6 +23,7 @@ import com.example.artdream.source.ArtSource
 import com.example.artdream.ui.ArtworkDialog
 import com.example.artdream.ui.ContentPane
 import com.example.artdream.ui.DownloadController
+import com.example.artdream.ui.DiagnosticsPane
 import com.example.artdream.ui.DownloadPane
 import com.example.artdream.ui.LibraryPane
 import com.example.artdream.ui.SettingRow
@@ -65,6 +66,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
     private lateinit var library: LibraryPane
     private lateinit var download: DownloadPane
     private lateinit var content: ContentPane
+    private lateinit var diagnostics: DiagnosticsPane
     private lateinit var navCol: LinearLayout
     private lateinit var paneHost: FrameLayout
     private lateinit var navCount: TextView
@@ -96,6 +98,8 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         download = DownloadPane(this, thumbs, tileW, tileH, onStart = ::startDownload, onOpen = ::openArtwork)
         content = ContentPane(this, prefs, onChanged = ::updateSourceWarnings)
 
+        diagnostics = DiagnosticsPane(this)
+
         val root = FocusRoot(this)
         navCol = buildNav()
         root.addView(navCol, LinearLayout.LayoutParams(dp(NAV_W), ViewGroup.LayoutParams.MATCH_PARENT))
@@ -109,6 +113,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         addSection("Content", content.view, content::firstFocusable) {}
         val display = buildDisplayPane()
         addSection("Display", display, { firstFocusableIn(display) }) {}
+        addSection("Diagnostics", diagnostics.view, diagnostics::firstFocusable) { if (it) loadDiagnostics() }
         val setup = buildSetupPane()
         addSection("Setup", setup, { firstFocusableIn(setup) }) {}
 
@@ -187,6 +192,12 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         runIo({ cache.entries() }) { list ->
             library.setEntries(list)
             setLibraryCount(list.size)
+        }
+    }
+
+    private fun loadDiagnostics() {
+        runIo({ ArtSource.ALL.associate { it.id to cache.lastResult(it.id) } to cache.lastDownloadAt() }) { (r, at) ->
+            diagnostics.setData(r, at)
         }
     }
 
@@ -427,6 +438,6 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         private const val NAV_W = 300
         private const val SECTION_LIBRARY = 0
         private const val SECTION_DOWNLOAD = 1
-        private const val SECTION_SETUP = 4
+        private const val SECTION_SETUP = 5
     }
 }

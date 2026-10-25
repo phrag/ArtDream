@@ -36,6 +36,11 @@ class ArtCache(ctx: Context) {
 
     private val dir = File(ctx.filesDir, "art").apply { mkdirs() }
     private val prefs = Prefs(ctx)
+    private val diag = Diagnostics(ctx)
+
+    /** Last recorded result per source id (for the Diagnostics pane). Reads prefs; call off the main thread. */
+    fun lastResult(sourceId: String): SourceResult? = diag.result(sourceId)
+    fun lastDownloadAt(): Long = diag.lastDownloadAt
 
     /** All cached images, newest first. */
     fun entries(): List<Entry> =
@@ -71,6 +76,7 @@ class ArtCache(ctx: Context) {
             val want = wantedNow()
             var added = 0
             var rounds = 0
+            val okSrc = HashSet<String>(); val addedBy = HashMap<String, Int>(); val errBy = HashMap<String, String>()
             // Larger runs need more passes: each pass yields at most BATCH per source,
             // and some candidates are rejected (portrait, wrong licence, failed download).
             val maxRounds = 5 + want / BATCH
@@ -79,9 +85,10 @@ class ArtCache(ctx: Context) {
                     if (added >= want || Thread.currentThread().isInterrupted) break
                     listener?.onStatus("Asking ${src.label}…")
                     val batch = try {
-                        src.fetchBatch(BATCH, Random.Default)
+                        withRetry { src.fetchBatch(BATCH, Random.Default) }.also { okSrc.add(src.id) }
                     } catch (e: Exception) {
                         Log.w(TAG, "${src.id} batch failed: $e")
+                        errBy[src.id] = Diagnostics.shortError(e)
                         listener?.onSourceFailed(src, e)
                         continue
                     }
@@ -93,6 +100,7 @@ class ArtCache(ctx: Context) {
                         listener?.onStatus("Downloading “${art.title.ifEmpty { "untitled" }}”")
                         if (download(art)) {
                             added++
+                            addedBy[src.id] = (addedBy[src.id] ?: 0) + 1
                             Log.i(TAG, "saved ${art.key} ($added/$want)")
                             listener?.onAdded(Entry(art, File(dir, art.key + ".jpg")), added, want)
                         }
@@ -100,6 +108,7 @@ class ArtCache(ctx: Context) {
                 }
             }
             trim()
+            recordResults(sources, okSrc, addedBy, errBy, added)
             Log.i(TAG, "refresh done: added $added of $want, ${count()} cached")
             return added
         } finally {
@@ -117,11 +126,56 @@ class ArtCache(ctx: Context) {
     fun enabledSources(): List<ArtSource> =
         ArtSource.ALL.filter { prefs.isCategoryOn(it.category) && prefs.isSourceOn(it.id) }
 
+    private fun recordResults(
+        sources: List<ArtSource>, ok: Set<String>, added: Map<String, Int>, err: Map<String, String>, total: Int,
+    ) {
+        val now = System.currentTimeMillis()
+        for (src in sources) {
+            // Only record sources we actually asked (a run can finish before reaching all of them).
+            if (src.id !in ok && src.id !in err) continue
+            val failed = src.id !in ok
+            diag.record(src.id, SourceResult(now, !failed, added[src.id] ?: 0, if (failed) err[src.id] else null))
+        }
+        if (total > 0) diag.lastDownloadAt = now
+    }
+
+    /**
+     * Run [block], retrying transient failures (HTTP 429/5xx, timeouts, dropped connections)
+     * with 1s, 2s backoff. Gives up after [RETRY_BUDGET_MS] in total or when interrupted.
+     */
+    private fun <T> withRetry(block: () -> T): T {
+        val start = System.currentTimeMillis()
+        var delay = 1000L
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                attempt++
+                val left = RETRY_BUDGET_MS - (System.currentTimeMillis() - start)
+                if (!isTransient(e) || attempt >= 3 || left <= delay || Thread.currentThread().isInterrupted) throw e
+                Log.i(TAG, "transient failure (${Diagnostics.shortError(e)}), retry in ${delay}ms")
+                try { Thread.sleep(delay) } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt(); throw e
+                }
+                delay *= 2
+            }
+        }
+    }
+
+    private fun isTransient(e: Exception): Boolean {
+        if (e is java.net.SocketTimeoutException) return true
+        if (e is java.net.UnknownHostException) return false
+        val code = Regex("HTTP (\\d{3})").find(e.message.orEmpty())?.groupValues?.get(1)?.toInt()
+        if (code != null) return code == 429 || code in 500..599
+        return e is java.io.IOException   // reset / dropped connection
+    }
+
     private fun download(art: Artwork): Boolean {
         val part = File(dir, art.key + ".part")
         for (url in art.imageUrls) {
             try {
-                Http.download(url, part)
+                withRetry { Http.download(url, part) }
                 if (accept(part)) {
                     part.renameTo(File(dir, art.key + ".jpg"))
                     File(dir, art.key + ".json").writeText(art.toJson().toString())
@@ -170,6 +224,7 @@ class ArtCache(ctx: Context) {
         private const val TAG = "ArtDream"
         const val TARGET = 30          // minimum playlist before we stop topping up eagerly
         const val BATCH = 10
+        private const val RETRY_BUDGET_MS = 8_000L
         const val MAX_EDGE = 4096
         const val ALREADY_RUNNING = -1
         private val running = AtomicBoolean(false)
