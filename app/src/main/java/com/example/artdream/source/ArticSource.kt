@@ -23,6 +23,26 @@ object ArticSource : ArtSource {
 
     private const val IIIF = "https://www.artic.edu/iiif/2"
 
+    /** 843 is AIC's documented default; larger sizes are usually allowed for PD works. */
+    fun imageUrls(imageId: String): List<String> =
+        listOf(1686, 843).map { w -> "$IIIF/$imageId/full/$w,/0/default.jpg" }
+
+    /** Fetch one public-domain artwork by id (used by the curated Masterpieces list). */
+    fun fetchOne(artworkId: Int): Artwork? {
+        val fields = "id,title,artist_title,date_display,image_id,is_public_domain,thumbnail"
+        val o = JSONObject(Http.getString("https://api.artic.edu/api/v1/artworks/$artworkId?fields=$fields"))
+            .getJSONObject("data")
+        val img = o.str("image_id")
+        if (!o.optBoolean("is_public_domain") || img.isEmpty()) return null
+        val thumb = o.optJSONObject("thumbnail")
+        return Artwork(
+            source = id, id = o.get("id").toString(),
+            title = o.str("title"), artist = o.str("artist_title"), date = o.str("date_display"),
+            imageUrls = imageUrls(img),
+            width = thumb?.optInt("width") ?: 0, height = thumb?.optInt("height") ?: 0,
+        )
+    }
+
     override fun fetchBatch(count: Int, rnd: Random): List<Artwork> {
         val must = JSONArray()
             .put(JSONObject().put("term", JSONObject().put("is_public_domain", true)))
@@ -44,8 +64,7 @@ object ArticSource : ArtSource {
             Artwork(
                 source = id, id = o.get("id").toString(),
                 title = o.str("title"), artist = o.str("artist_title"), date = o.str("date_display"),
-                // 843 is AIC's documented default; larger sizes are usually allowed for PD works.
-                imageUrls = listOf(1686, 843).map { w -> "$IIIF/$img/full/$w,/0/default.jpg" },
+                imageUrls = imageUrls(img),
                 width = thumb?.optInt("width") ?: 0,
                 height = thumb?.optInt("height") ?: 0,
             )

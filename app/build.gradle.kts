@@ -37,11 +37,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    testOptions { unitTests.isReturnDefaultValues = true }
     kotlinOptions {
         jvmTarget = "17"
     }
 }
 
 dependencies {
-    // Intentionally none. HttpURLConnection + org.json (bundled) + BitmapFactory.
+    // Intentionally none at runtime. HttpURLConnection + org.json (bundled) + BitmapFactory.
+    // Tests only: android.jar's org.json is stubbed on the JVM, so use the real one.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }

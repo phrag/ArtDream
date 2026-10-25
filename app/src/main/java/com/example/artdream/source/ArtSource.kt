@@ -30,6 +30,7 @@ interface ArtSource {
     companion object {
         val ALL: List<ArtSource> = listOf(
             ClevelandSource, MetSource, ArticSource,
+            RijksSource, SmkSource, NgaSource, MasterpiecesSource,
             NasaSpaceSource, NasaEarthSource,
             WikimediaLandscapesSource, WikimediaSpaceSource, WikimediaCitiesSource,
         )
