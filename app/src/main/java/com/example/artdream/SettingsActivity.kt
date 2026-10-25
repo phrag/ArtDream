@@ -76,6 +76,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
     private var seenFinishedRuns = -1
     private var libraryCount = -1
     private val reloadLibrary = Runnable { loadLibrary() }
+    private val updater by lazy { Updater(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -135,6 +136,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         seenFinishedRuns = DownloadController.finishedRuns
         download.render()
         loadLibrary()   // the screensaver may have changed the cache while we were away
+        updater.check()   // offers a newer GitHub build, if any
     }
 
     override fun onStop() {
