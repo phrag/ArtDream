@@ -1,6 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Placeholder 320x180 leanback banner; swap for real artwork later. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <size android:width="320dp" android:height="180dp" />
-    <gradient android:angle="315" android:startColor="#FF1B2A3A" android:endColor="#FF8A5A2B" />
-</shape>
+<!-- Leanback banner, 320x180dp: a gilt-framed landscape beside the "ArtDream"
+     wordmark. The wordmark is drawn as stroked paths (vectors can't render text).
+     VectorRaster is suppressed: the size is the TV banner spec, and minSdk 26
+     never needs the raster fallback that check guards. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="VectorRaster"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Background: deep night blue fading to warm umber. -->
+    <path android:pathData="M0,0H320V180H0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="0"
+                android:endX="320" android:endY="180"
+                android:startColor="#FF0F1822"
+                android:endColor="#FF3A2614" />
+        </aapt:attr>
+    </path>
+
+    <!-- Gilt frame: outer rectangle with an even-odd hole. -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M22,36H122V144H22Z M28,42V138H116V42Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="22" android:startY="36"
+                android:endX="122" android:endY="144">
+                <item android:offset="0" android:color="#FFF3D98B" />
+                <item android:offset="0.5" android:color="#FFA8781F" />
+                <item android:offset="1" android:color="#FFE9C46A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Dark mat inside the frame. -->
+    <path
+        android:fillColor="#FF1A1410"
+        android:pathData="M28,42H116V138H28Z" />
+
+    <!-- The painting: dusk sky, sun, hills. -->
+    <path android:pathData="M31,45H113V108H31Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="45"
+                android:endX="0" android:endY="108"
+                android:startColor="#FF3D5A80"
+                android:endColor="#FFF2C48D" />
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#FFFFF6D5"
+        android:pathData="M77,84A9,9 0 1,0 95,84A9,9 0 1,0 77,84Z" />
+    <path
+        android:fillColor="#FF4E6B5A"
+        android:pathData="M31,100Q50,88 66,98T113,94V135H31Z" />
+    <path
+        android:fillColor="#FF2C4632"
+        android:pathData="M31,112Q60,102 85,110T113,106V135H31Z" />
+    <path
+        android:fillColor="#FF1B2D22"
+        android:pathData="M40,135Q44,112 48,110Q52,112 56,135Z" />
+
+    <!-- Wordmark "ArtDream": 28-unit capitals/ascenders, 18-unit x-height,
+         stroked in gilt. Scaled to 80% and moved to the right of the frame. -->
+    <group
+        android:scaleX="0.8"
+        android:scaleY="0.8"
+        android:translateX="100.4"
+        android:translateY="6.8">
+        <path
+            android:strokeColor="#FFF3D98B"
+            android:strokeWidth="4"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M72,118L84,90L96,118M78,108L90,108
+                M101,118L101,100M101,108Q105,100 115,100
+                M124,92L124,112Q124,118 130,118L132,118M120,102L131,102
+                M137,90L137,118L147,118A14,14 0 0 0 147,90Z
+                M166,118L166,100M166,108Q170,100 180,100
+                M185,109L199,109Q199,100 192,100Q185,100 185,109Q185,118 193,118Q198,118 199,114
+                M217,100L217,118M217,110Q217,100 210,100Q204,100 204,109Q204,118 210,118Q217,118 217,110
+                M223,118L223,100M223,108Q223,100 229,100Q235,100 235,108L235,118M235,108Q235,100 241,100Q247,100 247,108L247,118" />
+    </group>
+
+    <!-- Hairline gilt rule under the wordmark. -->
+    <path
+        android:strokeColor="#FFA8781F"
+        android:strokeWidth="1.5"
+        android:pathData="M158,114H298" />
+</vector>

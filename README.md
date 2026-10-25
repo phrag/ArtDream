@@ -86,6 +86,5 @@ app/src/main/java/com/example/artdream/
 
 ## TODO
 
-- Real banner/icon artwork (`res/drawable/banner.xml` is a placeholder gradient).
 - Refresh the cache on a schedule (WorkManager) as well as when the screensaver starts.
 - Optional clock overlay; "favourite / never show again" from the settings screen.
