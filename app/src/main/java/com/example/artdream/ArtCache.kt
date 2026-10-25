@@ -48,7 +48,7 @@ class ArtCache(ctx: Context) {
             val img = File(dir, meta.nameWithoutExtension + ".jpg")
             if (!img.exists()) return@mapNotNull null
             runCatching { Entry(Artwork.fromJson(JSONObject(meta.readText())), img) }.getOrNull()
-        }.sortedByDescending { it.addedAt }
+        }.filter { it.art.key !in prefs.blocked }.sortedByDescending { it.addedAt }
 
     val isRefreshing: Boolean get() = running.get()
 
@@ -57,6 +57,12 @@ class ArtCache(ctx: Context) {
     fun remove(art: Artwork) {
         File(dir, art.key + ".jpg").delete()
         File(dir, art.key + ".json").delete()
+    }
+
+    /** Never show [art] again: remembered, deleted from disk and skipped by [refresh]. */
+    fun block(art: Artwork) {
+        prefs.block(art.key)
+        remove(art)
     }
 
     /**
@@ -93,7 +99,9 @@ class ArtCache(ctx: Context) {
                         continue
                     }
                     Log.i(TAG, "${src.id}: batch of ${batch.size}")
+                    val blocked = prefs.blocked
                     for (art in batch) {
+                        if (art.key in blocked) continue
                         if (added >= want || Thread.currentThread().isInterrupted) break
                         if (File(dir, art.key + ".json").exists()) continue
                         if (prefs.landscapeOnly && art.width > 0 && art.width < art.height) continue
@@ -214,7 +222,9 @@ class ArtCache(ctx: Context) {
         val imgs = dir.listFiles { f -> f.extension == "jpg" } ?: return
         val max = prefs.maxStored
         if (imgs.size <= max) return
-        imgs.sortedBy { it.lastModified() }.take(imgs.size - max).forEach { img ->
+        val keep = prefs.favourites
+        imgs.filter { it.nameWithoutExtension !in keep }.sortedBy { it.lastModified() }
+            .take(imgs.size - max).forEach { img ->
             img.delete()
             File(dir, img.nameWithoutExtension + ".json").delete()
         }

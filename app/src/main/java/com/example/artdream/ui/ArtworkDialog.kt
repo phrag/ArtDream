@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.example.artdream.ArtCache
+import com.example.artdream.Prefs
 import com.example.artdream.R
 import com.example.artdream.source.ArtSource
 import java.util.concurrent.ExecutorService
@@ -37,6 +38,7 @@ class ArtworkDialog(
     private lateinit var spinner: ProgressBar
     private var bitmap: Bitmap? = null
     private var armed = false
+    private val prefs = Prefs(activity.applicationContext)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,8 +81,21 @@ class ArtworkDialog(
         val close = Ui.button(ctx, "Close") { dismiss() }
         val remove = Ui.button(ctx, "Remove from library") { v -> onRemoveClicked(v as TextView) }
         remove.focusScale(1.06f) { has -> if (!has) disarm(remove) }
-        bar.addView(close, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        fun favLabel() = if (prefs.isFavourite(art.key)) "Unfavourite" else "Favourite"
+        val fav = Ui.button(ctx, favLabel()) { v -> prefs.toggleFavourite(art.key); (v as TextView).text = favLabel() }
+        val never = Ui.button(ctx, "Never show again") {
+            prefs.block(art.key)   // also drops it from favourites
+            dismiss()
+            onRemove(entry)
+        }
+        bar.addView(fav, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             marginStart = ctx.dp(24)
+        })
+        bar.addView(never, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            marginStart = ctx.dp(16)
+        })
+        bar.addView(close, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            marginStart = ctx.dp(16)
         })
         bar.addView(remove, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             marginStart = ctx.dp(16)

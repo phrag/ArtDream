@@ -39,6 +39,34 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("background_refresh", true)
         set(v) = sp.edit().putBoolean("background_refresh", v).apply()
 
+    /** Playlist limited to favourites (falls back to everything while there are none). */
+    var favouritesOnly: Boolean
+        get() = sp.getBoolean("favourites_only", false)
+        set(v) = sp.edit().putBoolean("favourites_only", v).apply()
+
+    /** Keys of favourite artworks; these are never trimmed from the cache. */
+    val favourites: Set<String> get() = sp.getStringSet("favourites", emptySet()).orEmpty().toSet()
+    fun isFavourite(key: String) = key in favourites
+
+    /** Flips the favourite flag; returns the new state. */
+    fun toggleFavourite(key: String): Boolean {
+        val set = favourites.toMutableSet()
+        val now = set.add(key)
+        if (!now) set.remove(key)
+        sp.edit().putStringSet("favourites", set).apply()
+        return now
+    }
+
+    /** Keys of artworks the user never wants to see again. */
+    val blocked: Set<String> get() = sp.getStringSet("blocked", emptySet()).orEmpty().toSet()
+    fun isBlocked(key: String) = key in blocked
+
+    /** Blocks [key] (and drops it from favourites). */
+    fun block(key: String) {
+        sp.edit().putStringSet("blocked", blocked + key)
+            .putStringSet("favourites", favourites - key).apply()
+    }
+
     fun isSourceOn(id: String): Boolean = sp.getBoolean("src_$id", true)
     fun setSourceOn(id: String, on: Boolean) = sp.edit().putBoolean("src_$id", on).apply()
 

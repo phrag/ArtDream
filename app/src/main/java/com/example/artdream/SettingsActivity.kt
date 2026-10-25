@@ -382,6 +382,9 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         col.addView(SettingRow.toggle(this, "Landscape images only",
             "Skip portrait images when downloading; they leave most of a widescreen TV empty",
             prefs.landscapeOnly) { prefs.landscapeOnly = it })
+        col.addView(SettingRow.toggle(this, "Favourites only",
+            "Only show images you marked as favourite (everything if you have none yet)",
+            prefs.favouritesOnly) { prefs.favouritesOnly = it })
         return scroll
     }
 
