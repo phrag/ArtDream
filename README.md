@@ -36,6 +36,10 @@ Smithsonian Open Access (needs a free api.data.gov key). Add a class implementin
 ./gradlew :app:assembleDebug     # or open in Android Studio → Build APK
 ```
 
+CI (`.github/workflows/build.yml`) builds and lints every push and pull request.
+The debug APK is attached to each run as the `artdream-debug-apk` artifact
+(Actions tab → pick a run → Artifacts).
+
 ## Install and enable
 
 ```bash
