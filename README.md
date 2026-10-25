@@ -7,7 +7,7 @@ boxes. Plain Kotlin, no third-party dependencies. GPL-3.0.
 - Paintings are fitted to the screen over a blurred, dimmed copy of the same painting, so non-16:9 works still look good.
 - Slow Ken Burns drift and crossfades, which also help against OLED burn-in.
 - Optional caption: title, artist, date and the lending museum.
-- Plays from an on-disk cache (about 1.5 MB per painting, capped at 120 paintings) and tops it up in the background each time it starts, so it never stalls on the network.
+- Plays from an on-disk cache (about 1.5 MB per painting, capped at 120 paintings) and tops it up in the background each time it starts and once a day, so it never stalls on the network.
 
 ## Image sources
 
@@ -38,7 +38,7 @@ Notes:
 - NASA items whose credit line mentions a non-PD licence or copyright are skipped.
 - Wikimedia is queried with a random `gcmstarthexsortkey` for variety; the licence
   (`extmetadata.LicenseShortName`) is checked per file. Shared/datacenter IPs can get
-  HTTP 429 from Wikimedia; the batch then fails and is retried later.
+  HTTP 429 from Wikimedia; see "Rate limits" below.
 
 - Rijksmuseum: the old key-based `/api/en/collection` now returns 410 Gone. The source uses the
   new keyless Linked Art service; only objects whose image carries the Public Domain Mark are used.
@@ -48,6 +48,21 @@ Notes:
   `published_images.csv` to pick up new acquisitions. Images are fetched live over IIIF.
 - SMK: works without an IIIF image id (thumbnail only) are skipped.
 - Masterpieces: ids were checked against the live APIs; a work that disappears is skipped.
+
+### Rate limits
+
+Shared IPs (VPN exits such as Proton VPN, CGNAT) often get HTTP 429 from Wikimedia, AIC and
+others. When a source answers 429 (or 503 with a `Retry-After` header), to its API or its image
+host, it is left alone until the time `Retry-After` gives (seconds or an HTTP date, at most a day),
+or else for 15 min, doubling on each further limit up to 24 h. The first successful batch
+resets this. Settings → Diagnostics shows such a source as "Waiting · Rate limited, retrying
+in 40 min". The logic is in `Backoff.kt`; the state is per source in SharedPreferences.
+
+### Download limits
+
+Images are downloaded at full quality. As a safety net, a download is aborted above 100 MB
+(`Http.MAX_DOWNLOAD_BYTES`, far above the largest real image, NASA originals at about 40 MB)
+or when the server says its `Content-Type` isn't `image/*`. Nothing partial is kept.
 
 To add a source: add a class implementing `source/ArtSource.kt` and list it in `ArtSource.ALL`.
 
@@ -68,6 +83,11 @@ https://github.com/phrag/ArtDream/releases/latest/download/artdream.apk
 Builds are signed with the committed `app/debug.keystore`, so a new APK installs
 over the old one without losing the downloaded paintings.
 
+The app updates itself from that release (`Updater.kt`): it asks GitHub at most once a day
+when the settings screen opens, offers a newer build, and checks the APK's size, sha256 and
+signing key before handing it to Android's installer. Settings → Setup shows the installed
+build and has "Automatic update checks" (on by default) and "Check for updates now".
+
 ## Install and enable
 
 ```bash
@@ -75,22 +95,31 @@ adb connect <tv-ip>:5555
 adb install -r artdream.apk   # or app/build/outputs/apk/debug/app-debug.apk
 ```
 
+**Upgrading from a build before the package rename:** the app id changed from
+`com.example.artdream` to `com.phrag.artdream`, so Android sees a new app. Uninstall the old
+one once (`adb uninstall com.example.artdream`, or Settings → Apps), install the new APK, and
+choose ArtDream as the screensaver again (Google TV: rerun the `adb shell settings` command
+below). Downloaded paintings and settings don't carry over.
+
 Open **ArtDream** from the home screen once and press **Download more paintings now**.
 Then:
 
 - **Shield / stock Android TV:** Settings → Device Preferences → Screen saver → ArtDream.
 - **Google TV** (only offers Ambient mode in the menu):
   ```bash
-  adb shell settings put secure screensaver_components com.example.artdream/.ArtDream
+  adb shell settings put secure screensaver_components com.phrag.artdream/.ArtDream
   ```
   Some firmware updates reset this setting.
 
 ## Layout
 
 ```
-app/src/main/java/com/example/artdream/
+app/src/main/java/com/phrag/artdream/
 ├── ArtDream.kt          # the DreamService: slides, crossfade, Ken Burns, caption
 ├── ArtCache.kt          # on-disk playlist + background top-up / trim
+├── Backoff.kt           # per-source rate-limit backoff (Retry-After, 15 min → 24 h)
+├── RefreshJobService.kt # daily background top-up
+├── Updater.kt           # self-update from the GitHub release
 ├── SettingsActivity.kt  # launcher entry and the screensaver's settings gear
 ├── Prefs.kt             # interval, captions, landscape-only, per-source toggles
 ├── Artwork.kt / Http.kt
@@ -99,5 +128,4 @@ app/src/main/java/com/example/artdream/
 
 ## TODO
 
-- Refresh the cache on a schedule (WorkManager) as well as when the screensaver starts.
 - Optional clock overlay; "favourite / never show again" from the settings screen.

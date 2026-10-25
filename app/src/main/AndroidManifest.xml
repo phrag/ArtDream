@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Self-update from the GitHub release (Updater.kt). Android 11 and older always ask to confirm; 12+ can skip that for updates. -->
@@ -11,12 +12,16 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- No backup or device transfer: the cache is re-downloadable and the prefs are trivial.
+         allowBackup covers Android 11 and older (so no fullBackupContent), the rules 12+. -->
     <application
         android:label="ArtDream"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/banner"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:ignore="DataExtractionRules"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <activity

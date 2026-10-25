@@ -15,11 +15,11 @@ val gitSha = git("rev-parse", "HEAD").takeIf { it.matches(Regex("[0-9a-f]{40}"))
 val gitTime = git("log", "-1", "--format=%ct").toLongOrNull() ?: 0L
 
 android {
-    namespace = "com.example.artdream"
+    namespace = "com.phrag.artdream"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.artdream"
+        applicationId = "com.phrag.artdream"
         minSdk = 26          // covers every Shield
         targetSdk = 34
         versionCode = 1
