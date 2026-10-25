@@ -370,6 +370,24 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         col.addView(SettingRow.toggle(this, "Landscape images only",
             "Skip portrait images when downloading; they leave most of a widescreen TV empty",
             prefs.landscapeOnly) { prefs.landscapeOnly = it })
+        col.addView(SettingRow(this, "Night mode", "Auto dims and warms the picture from 21:00 to 07:00").apply {
+            fun label() = if (prefs.nightMode == Prefs.NIGHT_AUTO) "Auto" else "Off"
+            setValue(label())
+            setOnClickListener {
+                prefs.nightMode = if (prefs.nightMode == Prefs.NIGHT_AUTO) Prefs.NIGHT_OFF else Prefs.NIGHT_AUTO
+                setValue(label())
+            }
+        })
+        col.addView(SettingRow.toggle(this, "Show clock", "A small clock in the top-right corner",
+            prefs.showClock) { prefs.showClock = it })
+        col.addView(SettingRow(this, "Image order", "By type keeps about 8 images in a row from one category").apply {
+            fun label() = if (prefs.grouping == Prefs.GROUP_BY_TYPE) "By type" else "Random"
+            setValue(label())
+            setOnClickListener {
+                prefs.grouping = if (prefs.grouping == Prefs.GROUP_BY_TYPE) Prefs.GROUP_RANDOM else Prefs.GROUP_BY_TYPE
+                setValue(label())
+            }
+        })
         return scroll
     }
 

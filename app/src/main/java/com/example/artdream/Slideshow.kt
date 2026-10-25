@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.os.Handler
@@ -19,8 +21,10 @@ import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextClock
 import android.widget.TextView
 import com.example.artdream.source.ArtSource
+import java.util.Calendar
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -64,6 +68,9 @@ class Slideshow(private val context: Context) {
         addView(status, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
+    private var clock: TextClock? = null
+    private var clockShift = 0
+
     /** The slideshow's root view; put it in a window once and leave it there. */
     val view: View get() = root
 
@@ -103,10 +110,11 @@ class Slideshow(private val context: Context) {
         // Drop every slide so no bitmaps are held (or animated) while stopped.
         for (i in root.childCount - 1 downTo 0) {
             val child = root.getChildAt(i)
-            if (child !== status) discard(child)
+            if (child !== status && child !== clock) discard(child)
         }
         current = null
         status.visibility = View.GONE
+        clock?.visibility = View.GONE
     }
 
     /** Skip to the next image now (no-op unless running). */
@@ -125,7 +133,7 @@ class Slideshow(private val context: Context) {
         if (!running) return
         val gen = ++generation
         main.removeCallbacksAndMessages(null)
-        if (queue.isEmpty()) queue.addAll(playlist().shuffled())
+        if (queue.isEmpty()) queue.addAll(order(playlist()))
         val next = queue.removeFirstOrNull()
         if (next == null) {
             status.visibility = View.VISIBLE
@@ -195,6 +203,7 @@ class Slideshow(private val context: Context) {
         val painting = ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setImageBitmap(slide.image)
+            if (isNight()) colorFilter = NIGHT_FILTER
         }
         val slideView = FrameLayout(context).apply {
             alpha = 0f
@@ -214,9 +223,10 @@ class Slideshow(private val context: Context) {
         val old = current
         for (i in root.childCount - 1 downTo 0) {
             val child = root.getChildAt(i)
-            if (child !== status && child !== old && child !== slideView) discard(child)
+            if (child !== status && child !== clock && child !== old && child !== slideView) discard(child)
         }
         current = slideView
+        updateClock()
         slideView.animate().alpha(1f).setDuration(FADE_MS).withEndAction { old?.let(::discard) }
 
         // Ken Burns: slow zoom + drift in a random direction across the whole interval.
@@ -229,6 +239,55 @@ class Slideshow(private val context: Context) {
             .setDuration(intervalMs + FADE_MS)
 
         main.postDelayed(::advance, intervalMs)
+    }
+
+    private fun isNight(): Boolean {
+        if (prefs.nightMode != Prefs.NIGHT_AUTO) return false
+        val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        return h >= 21 || h < 7
+    }
+
+    /** Show/hide the clock above the slides and nudge it a few px (burn-in). */
+    private fun updateClock() {
+        if (!prefs.showClock) {
+            clock?.visibility = View.GONE
+            return
+        }
+        val c = clock ?: TextClock(context).apply {
+            format12Hour = "h:mm"
+            format24Hour = "HH:mm"
+            setTextColor(Color.argb(180, 255, 255, 255))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setShadowLayer(8f, 0f, 2f, Color.BLACK)
+            val pad = dp(48)
+            setPadding(pad, pad, pad, pad)
+        }.also {
+            clock = it
+            root.addView(it, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.END))
+        }
+        clockShift = (clockShift + 1) % 6
+        val step = dp(4)
+        c.translationX = -(clockShift % 3) * step.toFloat()
+        c.translationY = (clockShift / 3) * step.toFloat() * 2
+        c.visibility = View.VISIBLE
+        c.bringToFront()
+    }
+
+    /** Playlist order: shuffled, or in shuffled runs of [RUN] from one category. */
+    private fun order(entries: List<ArtCache.Entry>): List<ArtCache.Entry> {
+        if (prefs.grouping != Prefs.GROUP_BY_TYPE) return entries.shuffled()
+        val categoryOf = ArtSource.ALL.associate { it.id to it.category }
+        val pools = entries.shuffled().groupBy { categoryOf[it.art.source] }.values
+            .map { ArrayDeque(it.chunked(RUN)) }.toMutableList()
+        val out = ArrayList<ArtCache.Entry>(entries.size)
+        var last = -1
+        while (pools.any { it.isNotEmpty() }) {
+            val open = pools.indices.filter { pools[it].isNotEmpty() }
+            val pick = (open.filter { it != last }.ifEmpty { open }).random()
+            out.addAll(pools[pick].removeFirst())
+            last = pick
+        }
+        return out
     }
 
     /**
@@ -289,5 +348,12 @@ class Slideshow(private val context: Context) {
     private companion object {
         const val TAG = "ArtDream"
         const val FADE_MS = 2_000L
+        const val RUN = 8
+        /** Dim to ~75% and shift toward warm (less blue, a little less green). */
+        val NIGHT_FILTER = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+            0.75f, 0f, 0f, 0f, 0f,
+            0f, 0.6f, 0f, 0f, 0f,
+            0f, 0f, 0.4f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f)))
     }
 }

@@ -20,6 +20,21 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("show_caption", true)
         set(v) = sp.edit().putBoolean("show_caption", v).apply()
 
+    /** "auto" dims and warms the painting between 21:00 and 07:00; "off" never does. */
+    var nightMode: String
+        get() = sp.getString("night_mode", NIGHT_AUTO) ?: NIGHT_AUTO
+        set(v) = sp.edit().putString("night_mode", v).apply()
+
+    /** Small clock in the top-right corner (nudged each slide against burn-in). */
+    var showClock: Boolean
+        get() = sp.getBoolean("show_clock", false)
+        set(v) = sp.edit().putBoolean("show_clock", v).apply()
+
+    /** [GROUP_RANDOM] or [GROUP_BY_TYPE] (runs of ~8 slides from one category). */
+    var grouping: String
+        get() = sp.getString("grouping", GROUP_RANDOM) ?: GROUP_RANDOM
+        set(v) = sp.edit().putString("grouping", v).apply()
+
     /** Paintings on by default; other categories are opt-in from the picker. */
     fun isCategoryOn(c: Category): Boolean = sp.getBoolean("cat_${c.name}", c == Category.PAINTINGS)
     fun setCategoryOn(c: Category, on: Boolean) = sp.edit().putBoolean("cat_${c.name}", on).apply()
@@ -38,6 +53,10 @@ class Prefs(ctx: Context) {
     fun setSourceOn(id: String, on: Boolean) = sp.edit().putBoolean("src_$id", on).apply()
 
     companion object {
+        const val NIGHT_OFF = "off"
+        const val NIGHT_AUTO = "auto"
+        const val GROUP_RANDOM = "random"
+        const val GROUP_BY_TYPE = "type"
         val INTERVALS = intArrayOf(30, 60, 120, 300, 600)
         val PER_RUN = intArrayOf(8, 20, 50, 100)
         val MAX_STORED = intArrayOf(60, 120, 250, 500)
