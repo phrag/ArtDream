@@ -78,6 +78,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
+        RefreshJobService.schedule(this)
         window.setBackgroundDrawable(ColorDrawable(getColor(R.color.ad_bg)))
 
         // Tile geometry from the screen: nav is fixed, the grid takes the rest.
