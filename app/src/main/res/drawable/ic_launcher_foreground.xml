@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive launcher icon foreground: a gilt picture frame around a simple
+     landscape, kept inside the 66dp circular safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Gilt frame: outer rectangle with an even-odd hole. -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M33,31H75V79H33Z M36,34V76H72V34Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="33" android:startY="31"
+                android:endX="75" android:endY="79">
+                <item android:offset="0" android:color="#FFF3D98B" />
+                <item android:offset="0.5" android:color="#FFA8781F" />
+                <item android:offset="1" android:color="#FFE9C46A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Dark mat. -->
+    <path
+        android:fillColor="#FF1A1410"
+        android:pathData="M36,34H72V76H36Z" />
+
+    <!-- Landscape: dusk sky, sun, two ranges of hills. -->
+    <path android:pathData="M38,36H70V60H38Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="36"
+                android:endX="0" android:endY="60"
+                android:startColor="#FF3D5A80"
+                android:endColor="#FFF2C48D" />
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#FFFFF6D5"
+        android:pathData="M49,46A5,5 0 1,0 59,46A5,5 0 1,0 49,46Z" />
+    <path
+        android:fillColor="#FF4E6B5A"
+        android:pathData="M38,60Q46,50 54,56T70,54V74H38Z" />
+    <path
+        android:fillColor="#FF2C4632"
+        android:pathData="M38,66Q50,60 62,67T70,66V74H38Z" />
+</vector>
