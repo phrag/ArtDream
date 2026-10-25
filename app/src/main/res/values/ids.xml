@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="ad_thumb_key" type="id" />
+    <item name="ad_entry" type="id" />
+</resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark 10-foot palette for the settings screen. Focus = near-white fill with
+     dark text, the convention TV users already know from the system UI. -->
+<resources>
+    <color name="ad_bg">#FF0E1014</color>
+    <color name="ad_nav_bg">#FF13161C</color>
+    <color name="ad_surface">#FF1A1E26</color>
+    <color name="ad_surface2">#FF262B36</color>
+    <color name="ad_divider">#FF2A2F3A</color>
+    <color name="ad_text">#FFF2F3F5</color>
+    <color name="ad_text2">#FFAEB4C0</color>
+    <color name="ad_text3">#FF6E7480</color>
+    <color name="ad_accent">#FFF0B45A</color>
+    <color name="ad_focus">#FFF5F5F5</color>
+    <color name="ad_on_focus">#FF111318</color>
+    <color name="ad_on_focus2">#FF3D4250</color>
+    <color name="ad_warn">#FFFFC56B</color>
+    <color name="ad_warn_bg">#FF3A2E17</color>
+    <color name="ad_error">#FFFF9C8A</color>
+</resources>
