@@ -11,24 +11,33 @@ boxes. Plain Kotlin, no third-party dependencies. GPL-3.0.
 
 ## Image sources
 
-All three are free, need no API key, and only works their museum has released as
-**CC0 / public domain** are requested.
+All are free, need no API key, and only request public domain / CC0 images — except
+Wikimedia Commons, where CC BY / CC BY-SA photos are also accepted (no NC/ND) and the
+author + licence are carried in the artwork (`credit`, `license`) for the caption.
 
-| Source | Endpoint | Image size |
-|---|---|---|
-| Cleveland Museum of Art | `openaccess-api.clevelandart.org/api/artworks/?cc0=1&type=Painting` | ~3400 px "print" JPEG |
-| The Met (European Paintings) | `collectionapi.metmuseum.org/public/collection/v1.1/search` | full original, downscaled to ≤4096 px |
-| Art Institute of Chicago | `api.artic.edu/api/v1/artworks/search` + IIIF | 1686 px (843 px fallback) |
+| Source | Category | Endpoint | Image size |
+|---|---|---|---|
+| Cleveland Museum of Art | Paintings | `openaccess-api.clevelandart.org/api/artworks/?cc0=1&type=Painting` | ~3400 px "print" JPEG |
+| The Met (European Paintings) | Paintings | `collectionapi.metmuseum.org/public/collection/v1.1/search` | full original, downscaled to ≤4096 px |
+| Art Institute of Chicago | Paintings | `api.artic.edu/api/v1/artworks/search` + IIIF | 1686 px (843 px fallback) |
+| NASA Image Library (space) | Space | `images-api.nasa.gov/search?media_type=image&q=...` | `~orig` (typically 2000-8000 px), falls back to 1920 px `~large` |
+| NASA Image Library (Earth) | Landscapes & nature | same, Earth/landscape queries | same |
+| Wikimedia Commons featured pictures (nature) | Landscapes & nature | `commons.wikimedia.org/w/api.php` (`generator=categorymembers`, `imageinfo`) | 3000 px JPEG thumbnail |
+| Wikimedia Commons featured pictures (astronomy) | Space | same | 3000 px |
+| Wikimedia Commons featured pictures (cities) | Cities & architecture | same | 3000 px |
 
 Notes:
 - The Met retired `/v1/search` on 2026-10-01. This app uses the paginated `/v1.1/search`.
 - AIC's IIIF image host is behind Cloudflare and challenged requests from a datacenter
   during development. It may work fine from a home network. If it fails, those works
-  are skipped and the other two sources carry on.
+  are skipped and the other sources carry on.
+- NASA items whose credit line mentions a non-PD licence or copyright are skipped.
+- Wikimedia is queried with a random `gcmstarthexsortkey` for variety; the licence
+  (`extmetadata.LicenseShortName`) is checked per file. Shared/datacenter IPs can get
+  HTTP 429 from Wikimedia; the batch then fails and is retried later.
 
-Ideas for more sources: Rijksmuseum, SMK (Denmark), National Gallery of Art (DC), and
-Smithsonian Open Access (needs a free api.data.gov key). Add a class implementing
-`source/ArtSource.kt` and list it in `ArtSource.ALL`.
+Ideas for more sources: Rijksmuseum, SMK (Denmark), National Gallery of Art (DC).
+Add a class implementing `source/ArtSource.kt` and list it in `ArtSource.ALL`.
 
 ## Build
 

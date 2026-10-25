@@ -51,7 +51,8 @@ abstract class NasaSource(
         val d = item.getJSONArray("data").getJSONObject(0)
         if (d.str("media_type") != "image") return null
         val text = d.str("description") + " " + d.str("secondary_creator")
-        if (text.contains("copyright", true) || text.contains("©")) return null
+        // A few items carry a non-PD licence in the credit line (e.g. "CC BY-NC-SA 4.0").
+        if (Regex("copyright|©|creative commons|\\bCC[ -]", RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
         val links = item.optJSONArray("links") ?: return null
 
         var orig: String? = null
