@@ -385,6 +385,24 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         col.addView(SettingRow.toggle(this, "Favourites only",
             "Only show images you marked as favourite (everything if you have none yet)",
             prefs.favouritesOnly) { prefs.favouritesOnly = it })
+        col.addView(SettingRow(this, "Night mode", "Auto dims and warms the picture from 21:00 to 07:00").apply {
+            fun label() = if (prefs.nightMode == Prefs.NIGHT_AUTO) "Auto" else "Off"
+            setValue(label())
+            setOnClickListener {
+                prefs.nightMode = if (prefs.nightMode == Prefs.NIGHT_AUTO) Prefs.NIGHT_OFF else Prefs.NIGHT_AUTO
+                setValue(label())
+            }
+        })
+        col.addView(SettingRow.toggle(this, "Show clock", "A small clock in the top-right corner",
+            prefs.showClock) { prefs.showClock = it })
+        col.addView(SettingRow(this, "Image order", "By type keeps about 8 images in a row from one category").apply {
+            fun label() = if (prefs.grouping == Prefs.GROUP_BY_TYPE) "By type" else "Random"
+            setValue(label())
+            setOnClickListener {
+                prefs.grouping = if (prefs.grouping == Prefs.GROUP_BY_TYPE) Prefs.GROUP_RANDOM else Prefs.GROUP_BY_TYPE
+                setValue(label())
+            }
+        })
         return scroll
     }
 
