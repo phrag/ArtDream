@@ -12,6 +12,7 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import com.example.artdream.ArtCache
+import com.example.artdream.Prefs
 import com.example.artdream.R
 import com.example.artdream.ui.DownloadController.Phase
 
@@ -56,6 +57,23 @@ class DownloadPane(
         clipChildren = false
         addView(strip)
     }
+    private val prefs = Prefs(ctx)
+    private val intro = Ui.body(ctx, "")
+    private val perRunRow = SettingRow(ctx, "Images per download").apply {
+        setOnClickListener {
+            prefs.perRun = cycle(Prefs.PER_RUN, prefs.perRun)
+            // Keep "fetch N" and "keep at most M" consistent: never keep fewer than one run.
+            if (prefs.maxStored < prefs.perRun) prefs.maxStored = Prefs.MAX_STORED.first { it >= prefs.perRun }
+            refreshSettings()
+        }
+    }
+    private val maxRow = SettingRow(ctx, "Library size").apply {
+        setOnClickListener {
+            prefs.maxStored = cycle(Prefs.MAX_STORED, prefs.maxStored)
+            if (prefs.perRun > prefs.maxStored) prefs.perRun = Prefs.PER_RUN.last { it <= prefs.maxStored }
+            refreshSettings()
+        }
+    }
     private var shown = false
     private var stripKeys: List<String> = emptyList()
 
@@ -66,9 +84,9 @@ class DownloadPane(
             clipToPadding = false
         }
         col.addView(Ui.header(ctx, "Download"))
-        col.addView(Ui.body(ctx, "Fetch new images now from the sources switched on under Content. " +
-            "Each run adds about ${ArtCache.FRESH_PER_RUN} (more while the library is small); the oldest are " +
-            "cleared out above ${ArtCache.MAX}. The screensaver also tops up on its own whenever it starts."))
+        col.addView(intro)
+        col.addView(perRunRow)
+        col.addView(maxRow)
         col.addView(Ui.spacer(ctx, 12))
         col.addView(noSourcesWarning, Ui.lp().apply { bottomMargin = ctx.dp(12) })
 
@@ -88,7 +106,26 @@ class DownloadPane(
         col.addView(stripLabel)
         col.addView(stripScroll, Ui.lp())
         view.addView(col)
+        refreshSettings()
         render()
+    }
+
+    /** Next option above [current], wrapping to the first. */
+    private fun cycle(options: IntArray, current: Int) = options.firstOrNull { it > current } ?: options.first()
+
+    private fun refreshSettings() {
+        intro.text = "Fetch new images now from the sources switched on under Content. The screensaver " +
+            "also tops up on its own whenever it starts, using the same settings."
+        perRunRow.setSub("How many new images each download adds (the first download fills a small library to ${ArtCache.TARGET})")
+        perRunRow.setValue("${prefs.perRun}")
+        maxRow.setSub("The oldest images are cleared out above this. Roughly ${approxSize(prefs.maxStored)} of storage.")
+        maxRow.setValue("${prefs.maxStored}")
+    }
+
+    /** ~3 MB per image after downscaling to 4K. */
+    private fun approxSize(count: Int): String {
+        val mb = count * 3
+        return if (mb >= 1000) "%.1f GB".format(mb / 1000f) else "$mb MB"
     }
 
     fun setShown(on: Boolean) {

@@ -55,8 +55,8 @@ class ArtCache(ctx: Context) {
     }
 
     /**
-     * Fetch up to [FRESH_PER_RUN] new paintings (more if the cache is short of
-     * [TARGET]), then trim the oldest down to [MAX] so the rotation keeps moving.
+     * Fetch [Prefs.perRun] new images (more if the cache is short of [TARGET]),
+     * then trim the oldest down to [Prefs.maxStored] so the rotation keeps moving.
      * Returns how many were added, or [ALREADY_RUNNING] if another refresh (e.g.
      * the screensaver's) is in progress. Only one run happens at a time.
      * Only sources whose category and own toggle are both on are used.
@@ -68,12 +68,15 @@ class ArtCache(ctx: Context) {
             val sources = enabledSources()
             if (sources.isEmpty()) return 0
 
-            val want = maxOf(FRESH_PER_RUN, TARGET - count())
+            val want = wantedNow()
             var added = 0
             var rounds = 0
-            while (added < want && rounds++ < 5 && !Thread.currentThread().isInterrupted) {
+            // Larger runs need more passes: each pass yields at most BATCH per source,
+            // and some candidates are rejected (portrait, wrong licence, failed download).
+            val maxRounds = 5 + want / BATCH
+            while (added < want && rounds++ < maxRounds && !Thread.currentThread().isInterrupted) {
                 for (src in sources.shuffled()) {
-                    if (Thread.currentThread().isInterrupted) break
+                    if (added >= want || Thread.currentThread().isInterrupted) break
                     listener?.onStatus("Asking ${src.label}…")
                     val batch = try {
                         src.fetchBatch(BATCH, Random.Default)
@@ -103,6 +106,13 @@ class ArtCache(ctx: Context) {
             running.set(false)
         }
     }
+
+    /**
+     * How many images the next [refresh] will try to add: the per-run setting,
+     * or enough to reach [TARGET] when the library is small, but never more
+     * than the library keeps (the trim would delete the new ones).
+     */
+    fun wantedNow(): Int = minOf(maxOf(prefs.perRun, TARGET - count()), prefs.maxStored)
 
     fun enabledSources(): List<ArtSource> =
         ArtSource.ALL.filter { prefs.isCategoryOn(it.category) && prefs.isSourceOn(it.id) }
@@ -148,8 +158,9 @@ class ArtCache(ctx: Context) {
 
     private fun trim() {
         val imgs = dir.listFiles { f -> f.extension == "jpg" } ?: return
-        if (imgs.size <= MAX) return
-        imgs.sortedBy { it.lastModified() }.take(imgs.size - MAX).forEach { img ->
+        val max = prefs.maxStored
+        if (imgs.size <= max) return
+        imgs.sortedBy { it.lastModified() }.take(imgs.size - max).forEach { img ->
             img.delete()
             File(dir, img.nameWithoutExtension + ".json").delete()
         }
@@ -158,8 +169,6 @@ class ArtCache(ctx: Context) {
     companion object {
         private const val TAG = "ArtDream"
         const val TARGET = 30          // minimum playlist before we stop topping up eagerly
-        const val MAX = 120            // ~1.5MB each after downscale → well under 200MB
-        const val FRESH_PER_RUN = 8
         const val BATCH = 10
         const val MAX_EDGE = 4096
         const val ALREADY_RUNNING = -1

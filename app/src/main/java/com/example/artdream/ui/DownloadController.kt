@@ -103,7 +103,7 @@ object DownloadController {
                 }
                 post(id) { sourceCount = sources }
                 val before = cache.count()
-                val estimate = maxOf(ArtCache.FRESH_PER_RUN, ArtCache.TARGET - before)
+                val estimate = cache.wantedNow()
                 post(id) { if (wanted == 0) wanted = estimate; notifyState() }
 
                 val result = try {

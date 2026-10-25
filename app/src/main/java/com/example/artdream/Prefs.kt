@@ -24,10 +24,22 @@ class Prefs(ctx: Context) {
     fun isCategoryOn(c: Category): Boolean = sp.getBoolean("cat_${c.name}", c == Category.PAINTINGS)
     fun setCategoryOn(c: Category, on: Boolean) = sp.edit().putBoolean("cat_${c.name}", on).apply()
 
+    /** New images fetched per download run (manual button or screensaver start). */
+    var perRun: Int
+        get() = sp.getInt("per_run", 20)
+        set(v) = sp.edit().putInt("per_run", v).apply()
+
+    /** Most images kept on the TV; the oldest are cleared out above this. */
+    var maxStored: Int
+        get() = sp.getInt("max_stored", 120)
+        set(v) = sp.edit().putInt("max_stored", v).apply()
+
     fun isSourceOn(id: String): Boolean = sp.getBoolean("src_$id", true)
     fun setSourceOn(id: String, on: Boolean) = sp.edit().putBoolean("src_$id", on).apply()
 
     companion object {
         val INTERVALS = intArrayOf(30, 60, 120, 300, 600)
+        val PER_RUN = intArrayOf(8, 20, 50, 100)
+        val MAX_STORED = intArrayOf(60, 120, 250, 500)
     }
 }
