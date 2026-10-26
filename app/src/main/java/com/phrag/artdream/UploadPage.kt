@@ -40,8 +40,9 @@ small{color:var(--dim)}
 <div class="drop" id="drop" tabindex="0"><b>Drop files here, or choose them</b>
 <span style="color:var(--dim)">jpg, png, webp, gif &middot; mp4, mkv, webm, mov</span>
 <div class="row picks"><button id="pickmedia" type="button">Photos &amp; videos</button><button id="pickfiles" type="button" class="quiet">Browse files</button></div>
+</div>
 <input id="pick" type="file" multiple accept="image/*,video/*,.mkv,.webm,.mov,.mp4" hidden>
-<input id="pickany" type="file" multiple hidden></div>
+<input id="pickany" type="file" multiple hidden>
 <ul id="queue"></ul>
 <h2>YouTube link</h2>
 <p style="margin:0 0 8px">&ldquo;Play link&rdquo; streams it in the screensaver (the TV needs internet; no sound unless you turn it on). <span id="dlnote"></span></p>
@@ -78,6 +79,8 @@ var chain=Promise.resolve();
 function add(files){Array.prototype.forEach.call(files,function(f){chain=chain.then(function(){return upload(f);});});}
 // Phones open the photo library for an image/video accept list, so "Browse files" uses an
 // input with no accept list to get the regular file picker. The server checks the type.
+// The inputs sit outside the drop zone: their click() bubbles, and the zone would then open
+// the photo picker instead.
 drop.onclick=function(){pick.click();};
 document.getElementById('pickmedia').onclick=function(e){e.stopPropagation();pick.click();};
 document.getElementById('pickfiles').onclick=function(e){e.stopPropagation();pickany.click();};
