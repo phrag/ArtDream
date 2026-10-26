@@ -30,7 +30,7 @@ class RefreshJobService : JobService() {
                 if (worker === Thread.currentThread()) worker = null
                 jobFinished(params, retry)
             }
-        }, "artdream-bg-refresh")
+        }, "fartsaver-bg-refresh")
         worker = t
         t.start()
         return true
@@ -42,7 +42,7 @@ class RefreshJobService : JobService() {
     }
 
     companion object {
-        private const val TAG = "ArtDream"
+        private const val TAG = "fArtSaver"
         private const val JOB_ID = 1001
 
         /**

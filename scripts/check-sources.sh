@@ -8,7 +8,7 @@ command -v curl >/dev/null || { echo "curl is required" >&2; exit 2; }
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 2; }
 
 # Same identification the app sends; museums and Wikimedia ask for one.
-UA="ArtDream-source-check/1.0 (https://github.com/phrag/ArtDream; Android TV screensaver)"
+UA="fArtSaver-source-check/1.0 (https://github.com/phrag/ArtDream; Android TV screensaver)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 failures=0

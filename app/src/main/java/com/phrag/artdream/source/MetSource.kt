@@ -34,7 +34,7 @@ object MetSource : ArtSource {
                 parse(JSONObject(Http.getString("$BASE/v1/objects/${ids.get(i)}")))
             } catch (e: Exception) {
                 if (Backoff.isRateLimit(e)) throw e   // let ArtCache back the whole source off
-                Log.w("ArtDream", "met object ${ids.get(i)}: $e")
+                Log.w("fArtSaver", "met object ${ids.get(i)}: $e")
                 null
             }
         }

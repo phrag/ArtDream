@@ -15,7 +15,7 @@ class HttpStatusException(val code: Int, val retryAfter: String?, url: String) :
 /** Tiny blocking HTTP helper. Call off the main thread. */
 object Http {
     // Museums ask API clients to identify themselves; AIC reads its own header.
-    private const val UA = "ArtDream/0.1 (Android TV screensaver)"
+    private const val UA = "fArtSaver/0.1 (Android TV screensaver)"
 
     /**
      * Hard ceiling for one image. Far above any real one (NASA originals, the

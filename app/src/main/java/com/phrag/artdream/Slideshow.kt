@@ -350,7 +350,7 @@ class Slideshow(private val context: Context) {
     private fun dp(v: Int) = (v * context.resources.displayMetrics.density).toInt()
 
     private companion object {
-        const val TAG = "ArtDream"
+        const val TAG = "fArtSaver"
         const val FADE_MS = 2_000L
         const val RUN = 8
         /** Dim to ~75% and shift toward warm (less blue, a little less green). */
