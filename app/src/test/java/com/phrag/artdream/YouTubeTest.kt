@@ -91,6 +91,10 @@ class YouTubeTest {
             assertTrue("unloadModule('captions')" in page)
             assertTrue("devicePixelRatio" in page)
             assertTrue("scale('+(1/dpr)+')" in page)
+            // Sized before the player exists, and again on resize (a 0x0 window left it at 480p).
+            assertTrue(page.indexOf("function onYouTubeIframeAPIReady") < page.indexOf("iframe_api\""))
+            assertTrue("addEventListener('resize'" in page)
+            assertTrue("player.setSize(W,H);best(player);" in page)
         }
     }
 }
