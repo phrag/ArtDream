@@ -191,7 +191,7 @@ class UploadServer(
         val len = req.contentLength
         if (len < 0) return fail(out, 411, name, "No file size sent")
         if (len == 0L) return fail(out, 400, name, "Empty file")
-        if (len > OwnMedia.MAX_FILE_BYTES) return fail(out, 413, name, "Larger than ${OwnMedia.MAX_FILE_BYTES / (1024 * 1024)} MB")
+        if (len > OwnMedia.MAX_FILE_BYTES) return fail(out, 413, name, "Larger than ${OwnMedia.MAX_FILE_BYTES / (1024 * 1024 * 1024)} GB")
         if (!own.hasRoomFor(len)) return fail(out, 507, name, "Not enough room left for your own media")
         if (req.headers["expect"]?.contains("100-continue", ignoreCase = true) == true) {
             out.write("HTTP/1.1 100 Continue\r\n\r\n".toByteArray()); out.flush()
@@ -268,6 +268,7 @@ class UploadServer(
         }
         return JSONObject().put("items", items).put("jobs", jobs).put("canDownload", true)
             .put("usedBytes", own.usedBytes()).put("quotaBytes", OwnMedia.QUOTA_BYTES)
+            .put("maxFileBytes", OwnMedia.MAX_FILE_BYTES)
     }
 
     private fun tokenMatches(given: String): Boolean =
