@@ -137,6 +137,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         DownloadController.observe(this)
         seenFinishedRuns = DownloadController.finishedRuns
         download.render()
+        DownloadController.attachIfRefreshing(this)   // a fill that started before we opened
         loadLibrary()   // the screensaver may have changed the cache while we were away
         updater.check()   // offers a newer GitHub build, if any
     }
