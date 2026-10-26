@@ -9,7 +9,7 @@ object UploadPage {
     val HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Add to ArtDream</title>
+<title>Add to fArtSaver</title>
 <style>
 :root{color-scheme:dark;--bg:#101216;--card:#1b1f27;--text:#f2f3f5;--dim:#aeb4c0;--accent:#f0b35a;--bad:#ff8a80;--ok:#7bd88f}
 *{box-sizing:border-box}
@@ -34,7 +34,7 @@ input[type=url]{flex:1;min-width:200px;font:inherit;padding:10px 12px;border-rad
 #ytmsg{margin:8px 0;min-height:1.4em;color:var(--ok)} #ytmsg.bad{color:var(--bad)}
 small{color:var(--dim)}
 </style></head><body><main>
-<h1>Add to ArtDream</h1>
+<h1>Add to fArtSaver</h1>
 <p>Pictures and videos you add here join the screensaver. They stay on the TV and nowhere else.</p>
 <div class="drop" id="drop" tabindex="0"><b>Drop files here, or tap to choose</b>
 <span style="color:var(--dim)">jpg, png, webp, gif &middot; mp4, mkv, webm, mov</span>

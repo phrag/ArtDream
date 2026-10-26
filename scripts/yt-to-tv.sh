@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Send a video (or picture) to ArtDream's "My media" on your TV. For a YouTube link, the
+# Send a video (or picture) to fArtSaver's "My media" on your TV. For a YouTube link, the
 # video is downloaded here first with yt-dlp, so nothing YouTube-specific runs on the TV.
 #
 #   scripts/yt-to-tv.sh <tv-address> <youtube-url>
@@ -39,7 +39,7 @@ send() {  # send <file>
   echo "Sending $name ($(du -h "$file" | cut -f1)) to the TV..."
   resp=$(curl -sS --connect-timeout 5 -T "$file" "http://$addr/upload?name=$(urlencode "$name")" -w '\n%{http_code}') || {
     echo "Couldn't send to the TV. Is Settings > My media open on it, and is this the address it shows now?" >&2
-    echo "(The address changes when the ArtDream app restarts.)" >&2
+    echo "(The address changes when the fArtSaver app restarts.)" >&2
     return 1; }
   local code=${resp##*$'\n'} body=${resp%$'\n'*}
   if [[ $code == 200 ]]; then

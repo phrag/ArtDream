@@ -48,7 +48,7 @@ object YouTubeDownloads {
     }
 
     private val jobs = LinkedHashMap<String, Job>()
-    private val pool = Executors.newSingleThreadExecutor { r -> Thread(r, "artdream-yt-download").apply { isDaemon = true } }
+    private val pool = Executors.newSingleThreadExecutor { r -> Thread(r, "fartsaver-yt-download").apply { isDaemon = true } }
     private var initialised = false
 
     fun jobs(): List<Job> = synchronized(jobs) { jobs.values.toList() }
@@ -249,7 +249,7 @@ object YouTubeDownloads {
         }
     }
 
-    private const val TAG = "ArtDream"
+    private const val TAG = "fArtSaver"
     private const val CHUNK = 4L * 1024 * 1024
     private const val KEEP_JOBS = 8
 }

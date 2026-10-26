@@ -153,7 +153,7 @@ class OwnMedia(ctx: Context) {
     enum class Kind { IMAGE, VIDEO, YOUTUBE }
 
     companion object {
-        private const val TAG = "ArtDream"
+        private const val TAG = "fArtSaver"
         const val SOURCE = "mine"
         /** Everything the user adds, together. */
         const val QUOTA_BYTES = 3L * 1024 * 1024 * 1024

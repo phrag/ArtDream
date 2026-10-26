@@ -103,7 +103,7 @@ class UploadServer(
     private var socket: ServerSocket? = null
     private val pool = ThreadPoolExecutor(
         4, 4, 30, TimeUnit.SECONDS, LinkedBlockingQueue(8),
-        ThreadFactory { r -> Thread(r, "artdream-upload-conn").apply { isDaemon = true } },
+        ThreadFactory { r -> Thread(r, "fartsaver-upload-conn").apply { isDaemon = true } },
     )
     @Volatile private var badTokens = 0
     @Volatile private var lockedUntil = 0L
@@ -125,7 +125,7 @@ class UploadServer(
                     runCatching { c.close() }
                 }
             }
-        }, "artdream-upload").apply { isDaemon = true }.start()
+        }, "fartsaver-upload").apply { isDaemon = true }.start()
         Log.i(TAG, "upload server on :$port")
         return true
     }
@@ -293,7 +293,7 @@ class UploadServer(
     }
 
     companion object {
-        private const val TAG = "ArtDream"
+        private const val TAG = "fArtSaver"
         private const val JSON = "application/json"
         private val PORTS = 8765..8774
         private const val TOKEN_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"   // no look-alikes (l, 1, o, 0, i)

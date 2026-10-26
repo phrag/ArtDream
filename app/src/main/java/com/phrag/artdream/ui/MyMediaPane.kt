@@ -27,7 +27,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
     val view = ScrollView(ctx).apply { isFillViewport = true; clipToPadding = false; isVerticalScrollBarEnabled = false }
 
     private val main = Handler(Looper.getMainLooper())
-    private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "artdream-mymedia").apply { isDaemon = true } }
+    private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "fartsaver-mymedia").apply { isDaemon = true } }
 
     private val modeRow = SettingRow(ctx, "Show my media")
     private val soundRow = SettingRow.toggle(ctx, "Sound on videos", "Off keeps the screensaver quiet", prefs.videoSound) {
