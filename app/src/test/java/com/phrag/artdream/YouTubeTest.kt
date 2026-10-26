@@ -84,4 +84,13 @@ class YouTubeTest {
         assertTrue("mute:0" in loud)
         assertTrue("e.target.mute();" !in loud)
     }
+
+    @Test fun playerPageTurnsCaptionsOffAndSizesThePlayerInScreenPixels() {
+        for (page in listOf(YouTube.playerHtml(id, sound = false), YouTube.playerHtml(id, sound = true))) {
+            assertTrue("cc_load_policy:0" in page)
+            assertTrue("unloadModule('captions')" in page)
+            assertTrue("devicePixelRatio" in page)
+            assertTrue("scale('+(1/dpr)+')" in page)
+        }
+    }
 }
