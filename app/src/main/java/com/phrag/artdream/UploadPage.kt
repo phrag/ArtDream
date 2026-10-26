@@ -20,6 +20,7 @@ p{color:var(--dim);margin:4px 0 16px}
 .drop{border:2px dashed #3a4150;border-radius:14px;padding:28px 16px;text-align:center;background:var(--card);cursor:pointer}
 .drop.over{border-color:var(--accent)}
 .drop b{display:block;font-size:18px;margin-bottom:4px}
+.drop .picks{justify-content:center;margin-top:14px}
 button{font:inherit;border:0;border-radius:10px;padding:10px 16px;background:var(--accent);color:#111318;font-weight:600;cursor:pointer}
 button.quiet{background:#2a303b;color:var(--text);font-weight:400;padding:6px 12px}
 ul{list-style:none;padding:0;margin:12px 0}
@@ -36,9 +37,11 @@ small{color:var(--dim)}
 </style></head><body><main>
 <h1>Add to fArtSaver</h1>
 <p>Pictures and videos you add here join the screensaver. They stay on the TV and nowhere else.</p>
-<div class="drop" id="drop" tabindex="0"><b>Drop files here, or tap to choose</b>
+<div class="drop" id="drop" tabindex="0"><b>Drop files here, or choose them</b>
 <span style="color:var(--dim)">jpg, png, webp, gif &middot; mp4, mkv, webm, mov</span>
-<input id="pick" type="file" multiple accept="image/*,video/*,.mkv,.webm,.mov,.mp4" hidden></div>
+<div class="row picks"><button id="pickmedia" type="button">Photos &amp; videos</button><button id="pickfiles" type="button" class="quiet">Browse files</button></div>
+<input id="pick" type="file" multiple accept="image/*,video/*,.mkv,.webm,.mov,.mp4" hidden>
+<input id="pickany" type="file" multiple hidden></div>
 <ul id="queue"></ul>
 <h2>YouTube link</h2>
 <p style="margin:0 0 8px">&ldquo;Play link&rdquo; streams it in the screensaver (the TV needs internet; no sound unless you turn it on). <span id="dlnote"></span></p>
@@ -51,7 +54,7 @@ small{color:var(--dim)}
 <ul id="have"></ul>
 </main>
 <script>
-var drop=document.getElementById('drop'),pick=document.getElementById('pick'),
+var drop=document.getElementById('drop'),pick=document.getElementById('pick'),pickany=document.getElementById('pickany'),
     queue=document.getElementById('queue'),have=document.getElementById('have'),quota=document.getElementById('quota');
 function mb(b){return b>=1073741824?(b/1073741824).toFixed(1)+' GB':(b/1048576).toFixed(b<10485760?1:0)+' MB';}
 function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
@@ -73,8 +76,13 @@ function upload(file){return new Promise(function(done){
 });}
 var chain=Promise.resolve();
 function add(files){Array.prototype.forEach.call(files,function(f){chain=chain.then(function(){return upload(f);});});}
+// Phones open the photo library for an image/video accept list, so "Browse files" uses an
+// input with no accept list to get the regular file picker. The server checks the type.
 drop.onclick=function(){pick.click();};
+document.getElementById('pickmedia').onclick=function(e){e.stopPropagation();pick.click();};
+document.getElementById('pickfiles').onclick=function(e){e.stopPropagation();pickany.click();};
 pick.onchange=function(){add(pick.files);pick.value='';};
+pickany.onchange=function(){add(pickany.files);pickany.value='';};
 drop.ondragover=function(e){e.preventDefault();drop.classList.add('over');};
 drop.ondragleave=function(){drop.classList.remove('over');};
 drop.ondrop=function(e){e.preventDefault();drop.classList.remove('over');add(e.dataTransfer.files);};
