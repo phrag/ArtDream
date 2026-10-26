@@ -80,7 +80,8 @@ the slide time, and are cut after 5 minutes.
 Three ways to add things:
 
 1. **From a phone or computer on the same Wi-Fi.** My media shows an address such as
-   `192.168.2.115:8765/k3m9x2qp/`. Open it in a browser and drop files on the page (jpg, png,
+   `192.168.2.115:8765/k3m9x2qp/` with a QR code of it beside it. Scan the code with the phone
+   camera, or type the address into a browser, and drop files on the page (jpg, png,
    webp, gif, mp4, mkv, webm, mov). The page also has a **YouTube link** box. The upload server
    only runs while that screen is open, serves only private-network addresses, needs the random
    token in the URL, and checks each file's type, size and free space before keeping it.
