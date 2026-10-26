@@ -1,5 +1,6 @@
 package com.phrag.artdream
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -7,23 +8,35 @@ import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.PorterDuff
+import android.graphics.SurfaceTexture
 import android.graphics.Typeface
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.animation.LinearInterpolator
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextClock
 import android.widget.TextView
 import com.phrag.artdream.source.ArtSource
+import java.io.File
 import java.util.Calendar
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -42,9 +55,37 @@ import kotlin.random.Random
  */
 class Slideshow(private val context: Context) {
 
-    private class Slide(val art: Artwork, val image: Bitmap, val backdrop: Bitmap) {
+    /**
+     * One slide's decoded content: a picture ([image]) or a video ([video], played by [player]
+     * on a surface once its view is laid out). The backdrop is the blurred picture/poster frame.
+     */
+    private class Slide(
+        val art: Artwork,
+        val image: Bitmap?,
+        val backdrop: Bitmap,
+        val video: File? = null,
+        val videoW: Int = 0,
+        val videoH: Int = 0,
+        val durationMs: Long = 0,
+        /** Set for a YouTube link: shown live in [web] rather than decoded. */
+        val youtubeId: String? = null,
+    ) {
+        var player: MediaPlayer? = null
+        var surface: Surface? = null
+        var web: WebView? = null
+        /** Hands [web] back to the slideshow's pool (WebViews are reused, not destroyed per slide). */
+        var releaseWeb: ((WebView) -> Unit)? = null
+        var disposed = false
+
         fun recycle() {
-            image.recycle()
+            disposed = true
+            web?.let { releaseWeb?.invoke(it) }
+            web = null
+            player?.let { runCatching { it.stop() }; it.release() }
+            player = null
+            surface?.release()
+            surface = null
+            image?.recycle()
             backdrop.recycle()
         }
     }
@@ -54,6 +95,7 @@ class Slideshow(private val context: Context) {
     private val loader: ExecutorService = Executors.newSingleThreadExecutor()   // decodes the next slide
     private val network: ExecutorService = Executors.newSingleThreadExecutor()  // tops up the cache
     private val cache = ArtCache(context.applicationContext)
+    private val own = OwnMedia(context.applicationContext)
     private val prefs = Prefs(context.applicationContext)
 
     private val status = TextView(context).apply {
@@ -75,6 +117,8 @@ class Slideshow(private val context: Context) {
     val view: View get() = root
 
     private val queue = ArrayDeque<ArtCache.Entry>()
+    private val brokenLinks = HashMap<String, Long>()   // YouTube id -> when to try it again
+    private var lastYouTubeLoadAt = 0L
     private val refreshing = AtomicBoolean(false)
     private var current: View? = null
     private var running = false
@@ -87,8 +131,9 @@ class Slideshow(private val context: Context) {
     fun start() {
         if (running || released) return
         running = true
-        // Top up the cache in the background (one refresh at a time).
-        if (refreshing.compareAndSet(false, true)) {
+        // Top up the cache in the background (one refresh at a time) — unless only
+        // the user's own media is wanted, which needs no downloads.
+        if (prefs.ownMode != Prefs.OWN_ONLY && refreshing.compareAndSet(false, true)) {
             network.execute {
                 val added = try {
                     cache.refresh()
@@ -102,7 +147,16 @@ class Slideshow(private val context: Context) {
                 if (added > 0) main.post { if (running && current == null) advance() }
             }
         }
-        advance()
+        // Files left in the app's media folder (adb push) join the user's own media first, so
+        // the very first slide can already be one of them.
+        if (own.hasPending()) {
+            loader.execute {
+                runCatching { own.importPending() }
+                main.post { if (running) advance() }
+            }
+        } else {
+            advance()
+        }
     }
 
     fun stop() {
@@ -115,6 +169,7 @@ class Slideshow(private val context: Context) {
             val child = root.getChildAt(i)
             if (child !== status && child !== clock) discard(child)
         }
+        destroyIdleWebs()   // nothing is loading now, so this is the safe moment
         current = null
         status.visibility = View.GONE
         clock?.visibility = View.GONE
@@ -136,16 +191,21 @@ class Slideshow(private val context: Context) {
         if (!running) return
         val gen = ++generation
         main.removeCallbacksAndMessages(null)
-        if (queue.isEmpty()) queue.addAll(order(playlist()))
-        val next = queue.removeFirstOrNull()
+        if (queue.isEmpty()) queue.addAll(buildQueue())
+        val next = takeNext()
         if (next == null) {
             status.visibility = View.VISIBLE
             main.postDelayed(::advance, 5_000)
             return
         }
         loader.execute {
+            val mine = next.art.source == OwnMedia.SOURCE
             val slide = try {
-                decode(next)
+                when {
+                    mine && OwnMedia.isVideo(next) -> decodeVideo(next)
+                    mine && OwnMedia.isYouTube(next) -> decodeYouTube(next)
+                    else -> decode(next)
+                }
             } catch (e: Throwable) {   // incl. OOM on a pathological file
                 Log.w(TAG, "decode ${next.image}: $e")
                 null
@@ -155,7 +215,12 @@ class Slideshow(private val context: Context) {
                     slide?.recycle()
                     return@post
                 }
-                if (slide == null) {
+                if (slide == null && mine) {
+                    // Never delete the user's own file on a failed decode; skip it, and pause
+                    // briefly so a playlist of nothing but bad files can't spin.
+                    Log.w(TAG, "skipping unreadable ${next.image.name}")
+                    main.postDelayed(::advance, 1_000)
+                } else if (slide == null) {
                     cache.remove(next.art)   // corrupt; drop it so we don't spin on it
                     advance()
                 } else {
@@ -163,6 +228,46 @@ class Slideshow(private val context: Context) {
                 }
             }
         }
+    }
+
+    /**
+     * One pass through the playlist. In Mixed mode the user's own items get a guaranteed share, one
+     * after every [OWN_EVERY] museum slides: with a hundred museum images a lone uploaded video would
+     * otherwise come up about once in two hours and look like it hadn't worked. Own items take turns
+     * (shuffled, repeating when there are fewer than slots).
+     */
+    private fun buildQueue(): List<ArtCache.Entry> {
+        val all = playlist()
+        val mine = all.filter { it.art.source == OwnMedia.SOURCE }
+        val art = all.filter { it.art.source != OwnMedia.SOURCE }
+        if (mine.isEmpty() || art.isEmpty() || prefs.ownMode != Prefs.OWN_MIX) return order(all)
+
+        val turns = ArrayDeque<ArtCache.Entry>()
+        fun nextOwn(): ArtCache.Entry {
+            if (turns.isEmpty()) turns.addAll(mine.shuffled())
+            return turns.removeFirst()
+        }
+        val out = ArrayList<ArtCache.Entry>()
+        order(art).forEachIndexed { i, e ->
+            out.add(e)
+            if ((i + 1) % OWN_EVERY == 0) out.add(nextOwn())
+        }
+        if (out.none { it.art.source == OwnMedia.SOURCE }) out.add(nextOwn())   // fewer museum slides than a round
+        return out
+    }
+
+    /**
+     * The next entry from the queue. On the test TV a YouTube page loaded within ~30 s of another
+     * sat dead for ~30 s before its player started, so right after one, show a non-YouTube slide
+     * first if one is queued.
+     */
+    private fun takeNext(): ArtCache.Entry? {
+        val first = queue.removeFirstOrNull() ?: return null
+        if (!OwnMedia.isYouTube(first) || System.currentTimeMillis() - lastYouTubeLoadAt >= YOUTUBE_GAP_MS) return first
+        val other = queue.firstOrNull { !OwnMedia.isYouTube(it) } ?: return first
+        queue.remove(other)
+        queue.addFirst(first)   // its turn comes next
+        return other
     }
 
     private fun decode(entry: ArtCache.Entry): Slide? {
@@ -195,6 +300,7 @@ class Slideshow(private val context: Context) {
     }
 
     private fun show(slide: Slide) {
+        Log.d(TAG, "show ${slide.art.source}: ${slide.art.key}")
         status.visibility = View.GONE
         val intervalMs = prefs.intervalSec * 1000L
 
@@ -203,7 +309,9 @@ class Slideshow(private val context: Context) {
             setImageBitmap(slide.backdrop)
             setColorFilter(Color.argb(150, 0, 0, 0), PorterDuff.Mode.SRC_ATOP)
         }
-        val painting = ImageView(context).apply {
+        val isVideo = slide.video != null
+        val isYouTube = slide.youtubeId != null
+        val painting: View = if (isYouTube) youtubeView(slide) else if (isVideo) videoView(slide, intervalMs) else ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setImageBitmap(slide.image)
             if (isNight()) colorFilter = NIGHT_FILTER
@@ -213,6 +321,9 @@ class Slideshow(private val context: Context) {
             tag = slide   // so discard() can recycle its bitmaps
             addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(painting, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            // A video can't take the bitmap colour filter, so dim and warm it with a veil.
+            if ((isVideo || isYouTube) && isNight()) addView(View(context).apply { setBackgroundColor(NIGHT_VEIL) },
+                FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             // CC BY / BY-SA images must stay attributed, so they keep a one-line
             // credit even when captions are switched off.
             val needsCredit = slide.art.license.startsWith("CC BY")
@@ -233,15 +344,174 @@ class Slideshow(private val context: Context) {
         slideView.animate().alpha(1f).setDuration(FADE_MS).withEndAction { old?.let(::discard) }
 
         // Ken Burns: slow zoom + drift in a random direction across the whole interval.
-        val drift = context.resources.displayMetrics.widthPixels * 0.02f
-        painting.animate()
-            .scaleX(1.06f).scaleY(1.06f)
-            .translationX(if (Random.nextBoolean()) drift else -drift)
-            .translationY(if (Random.nextBoolean()) drift / 2 else -drift / 2)
-            .setInterpolator(LinearInterpolator())
-            .setDuration(intervalMs + FADE_MS)
+        // (Videos already move, so they stay put.)
+        if (!isVideo && !isYouTube) {
+            val drift = context.resources.displayMetrics.widthPixels * 0.02f
+            painting.animate()
+                .scaleX(1.06f).scaleY(1.06f)
+                .translationX(if (Random.nextBoolean()) drift else -drift)
+                .translationY(if (Random.nextBoolean()) drift / 2 else -drift / 2)
+                .setInterpolator(LinearInterpolator())
+                .setDuration(intervalMs + FADE_MS)
+        }
 
-        main.postDelayed(::advance, intervalMs)
+        main.postDelayed(::advance, if (isVideo) videoShowMs(slide, intervalMs) else intervalMs)
+    }
+
+    /**
+     * How long a video holds the screen: a clip shorter than the slide interval loops until the
+     * interval is up (so it doesn't flash by), a longer one plays through, up to [VIDEO_CAP_MS].
+     */
+    private fun videoShowMs(slide: Slide, intervalMs: Long): Long =
+        if (slide.durationMs < intervalMs) intervalMs else minOf(slide.durationMs, VIDEO_CAP_MS) + 500
+
+    /** The video, fitted to the screen on a [TextureView] (unlike a SurfaceView it fades with the slide). */
+    private fun videoView(slide: Slide, intervalMs: Long): View {
+        val dm = context.resources.displayMetrics
+        val vw = slide.videoW.coerceAtLeast(1)
+        val vh = slide.videoH.coerceAtLeast(1)
+        val fit = minOf(dm.widthPixels.toFloat() / vw, dm.heightPixels.toFloat() / vh)
+        val tv = TextureView(context)
+        tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
+                if (slide.disposed) return
+                try {
+                    val surface = Surface(st)
+                    val mp = MediaPlayer()
+                    slide.surface = surface
+                    slide.player = mp
+                    mp.setSurface(surface)
+                    mp.setDataSource(slide.video!!.path)
+                    mp.isLooping = slide.durationMs < intervalMs
+                    val vol = if (prefs.videoSound) 1f else 0f
+                    mp.setVolume(vol, vol)
+                    mp.setOnPreparedListener { if (!slide.disposed) it.start() }
+                    mp.setOnErrorListener { _, what, extra ->
+                        Log.w(TAG, "video ${slide.video?.name}: error $what/$extra")
+                        main.post { if (running && !slide.disposed && current?.tag === slide) advance() }
+                        true
+                    }
+                    mp.prepareAsync()
+                } catch (e: Exception) {
+                    Log.w(TAG, "video ${slide.video?.name}: $e")
+                    main.post { if (running && !slide.disposed && current?.tag === slide) advance() }
+                }
+            }
+            override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {}
+            override fun onSurfaceTextureDestroyed(st: SurfaceTexture) = true
+            override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+        }
+        return FrameLayout(context).apply {
+            addView(tv, FrameLayout.LayoutParams((vw * fit).toInt(), (vh * fit).toInt(), Gravity.CENTER))
+        }
+    }
+
+    /**
+     * A YouTube link, played live in a WebView (muted unless Sound is on). A short video repeats
+     * until the slide interval is up; a long one is cut then. If the player reports an error
+     * (embedding disabled, video gone) or never starts, the slideshow just moves on.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun youtubeView(slide: Slide): View {
+        fun skip() = main.post {
+            if (running && !slide.disposed && current?.tag === slide) {
+                slide.youtubeId?.let { brokenLinks[it] = System.currentTimeMillis() + BROKEN_LINK_MS }
+                advance()
+            }
+        }
+        var ready = false
+        val web = acquireWeb().apply {
+            webViewClient = object : WebViewClient() {
+                // Only the player page itself; its frames load normally, the page can't navigate away.
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = request.isForMainFrame
+                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                    if (request.isForMainFrame) {
+                        Log.w(TAG, "youtube ${slide.youtubeId}: page error ${error.errorCode} ${error.description}")
+                        skip()
+                    }
+                }
+            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                    val msg = m.message()
+                    if (msg.startsWith("artdream:")) {
+                        Log.i(TAG, "youtube ${slide.youtubeId}: ${msg.removePrefix("artdream:")}")
+                        if (msg == "artdream:ready") ready = true
+                        if (msg.startsWith("artdream:error:")) main.postDelayed({ skip() }, 1_500)
+                    }
+                    return true
+                }
+            }
+        }
+        slide.web = web
+        slide.releaseWeb = ::releaseWeb
+        lastYouTubeLoadAt = System.currentTimeMillis()
+        web.loadDataWithBaseURL(YouTube.PLAYER_BASE_URL, YouTube.playerHtml(slide.youtubeId!!, prefs.videoSound), "text/html", "utf-8", null)
+        main.postDelayed({
+            if (!ready && !slide.disposed) {
+                Log.w(TAG, "youtube ${slide.youtubeId}: player never started")
+                skip()
+            }
+        }, YOUTUBE_START_MS)
+        return web
+    }
+
+    /**
+     * WebViews are kept and reused between slides. Destroying one while the next slide's page
+     * was still loading left the new page without a network connection for ~25 s on the TV, so
+     * they are only destroyed when the slideshow stops.
+     */
+    private val idleWebs = ArrayDeque<WebView>()
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun acquireWeb(): WebView = idleWebs.removeFirstOrNull() ?: WebView(context).apply {
+        setBackgroundColor(Color.BLACK)
+        isFocusable = false
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.mediaPlaybackRequiresUserGesture = false
+    }
+
+    private fun releaseWeb(w: WebView) {
+        (w.parent as? ViewGroup)?.removeView(w)
+        w.webViewClient = WebViewClient()      // stop reporting to the slide it served
+        w.webChromeClient = WebChromeClient()
+        w.loadUrl("about:blank")
+        idleWebs.addLast(w)
+    }
+
+    private fun destroyIdleWebs() {
+        while (idleWebs.isNotEmpty()) idleWebs.removeFirst().let { it.stopLoading(); it.destroy() }
+    }
+
+    private fun decodeYouTube(entry: ArtCache.Entry): Slide? {
+        val id = OwnMedia.youtubeId(entry.image) ?: return null
+        return Slide(entry.art, null, Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888), youtubeId = id)
+    }
+
+    /** Poster frame (for the blurred backdrop), size and length of a video; null if it can't be read. */
+    private fun decodeVideo(entry: ArtCache.Entry): Slide? {
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(entry.image.path)
+            fun meta(key: Int) = r.extractMetadata(key)?.toIntOrNull() ?: 0
+            val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            var w = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            var h = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            val rotation = meta(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            if (rotation == 90 || rotation == 270) { val t = w; w = h; h = t }
+            if (durationMs <= 0 || w <= 0 || h <= 0) return null
+            val frame = r.getFrameAtTime(minOf(1_000_000L, durationMs * 500), MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            val backdrop = if (frame != null) {
+                val bh = (24f * frame.height / frame.width).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(frame, 24, bh, true).also { if (it !== frame) frame.recycle() }
+            } else {
+                Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888)   // black
+            }
+            return Slide(entry.art, null, backdrop, entry.image, w, h, durationMs)
+        } finally {
+            runCatching { r.release() }
+        }
     }
 
     private fun isNight(): Boolean {
@@ -298,7 +568,14 @@ class Slideshow(private val context: Context) {
      * cached so a just-changed picker never leaves a blank screen.
      */
     private fun playlist(): List<ArtCache.Entry> {
-        val all = cache.entries()
+        // A YouTube link that just failed (embedding off, video gone, no network) sits out a while,
+        // so a playlist of one bad link doesn't keep reloading a web page.
+        val now = System.currentTimeMillis()
+        val mine = (if (prefs.ownMode == Prefs.OWN_OFF) emptyList() else own.entries()).filter { e ->
+            !OwnMedia.isYouTube(e) || (brokenLinks[OwnMedia.youtubeId(e.image)] ?: 0L) <= now
+        }
+        // "Only mine" with nothing added yet falls back to the museum art, never a blank screen.
+        val all = if (prefs.ownMode == Prefs.OWN_ONLY && mine.isNotEmpty()) mine else cache.entries() + mine
         val categoryOf = ArtSource.ALL.associate { it.id to it.category }
         val wanted = all.filter { e -> categoryOf[e.art.source]?.let(prefs::isCategoryOn) ?: true }
         val pool = if (prefs.favouritesOnly) wanted.filter { it.art.key in prefs.favourites } else wanted
@@ -353,6 +630,22 @@ class Slideshow(private val context: Context) {
         const val TAG = "fArtSaver"
         const val FADE_MS = 2_000L
         const val RUN = 8
+        /** In Mixed mode, one of the user's own slides after this many museum slides. */
+        const val OWN_EVERY = 3
+        /** A video longer than this is cut here and the slideshow moves on. */
+        const val VIDEO_CAP_MS = 5 * 60_000L
+        /**
+         * A YouTube slide that hasn't reported "ready" by now is skipped (no network, blocked, …).
+         * Generous on purpose: on the test TV a page loaded soon after another YouTube page stalled
+         * for ~30 s before the player started.
+         */
+        const val YOUTUBE_START_MS = 45_000L
+        /** Minimum spacing wanted between two YouTube page loads (see [advance]). */
+        const val YOUTUBE_GAP_MS = 35_000L
+        /** How long a failed YouTube link is left out of the playlist. */
+        const val BROKEN_LINK_MS = 15 * 60_000L
+        /** Warm dim veil over videos at night (the bitmap [NIGHT_FILTER] can't apply to them). */
+        val NIGHT_VEIL = Color.argb(90, 40, 15, 0)
         /** Dim to ~75% and shift toward warm (less blue, a little less green). */
         val NIGHT_FILTER = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
             0.75f, 0f, 0f, 0f, 0f,

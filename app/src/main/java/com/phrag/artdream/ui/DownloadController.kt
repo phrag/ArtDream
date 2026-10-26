@@ -161,6 +161,33 @@ object DownloadController {
         }
     }
 
+    /**
+     * Call when the settings screen opens. If the screensaver or the daily job is already
+     * filling the cache, show that instead of "Ready to download" and an empty library; the
+     * poll below flips back to normal when it finishes. Does nothing while we're mid-run or
+     * showing a result.
+     */
+    fun attachIfRefreshing(ctx: Context) {
+        if (phase != Phase.IDLE) return
+        val id = ++runId
+        val appCtx = ctx.applicationContext
+        worker.execute {
+            val cache = ArtCache(appCtx)
+            if (!cache.isRefreshing) return@execute
+            val before = cache.count()
+            post(id) {
+                phase = Phase.BACKGROUND
+                fromBackground = true
+                added = 0; wanted = 0
+                backgroundStartCount = before
+                libraryCount = before
+                status = "The screensaver is downloading in the background"
+                notifyState()
+                main.postDelayed({ poll(id, appCtx) }, POLL_MS)
+            }
+        }
+    }
+
     /** Stops our own run (the refresh loop honours interruption). Can't stop the screensaver's. */
     fun cancel() {
         if (phase != Phase.RUNNING) return

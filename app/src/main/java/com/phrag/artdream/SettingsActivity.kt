@@ -26,6 +26,7 @@ import com.phrag.artdream.ui.DownloadController
 import com.phrag.artdream.ui.DiagnosticsPane
 import com.phrag.artdream.ui.DownloadPane
 import com.phrag.artdream.ui.LibraryPane
+import com.phrag.artdream.ui.MyMediaPane
 import com.phrag.artdream.ui.SettingRow
 import com.phrag.artdream.ui.ThumbLoader
 import com.phrag.artdream.ui.Ui
@@ -69,6 +70,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
     private lateinit var download: DownloadPane
     private lateinit var content: ContentPane
     private lateinit var diagnostics: DiagnosticsPane
+    private lateinit var myMedia: MyMediaPane
     private lateinit var navCol: LinearLayout
     private lateinit var paneHost: FrameLayout
     private lateinit var navCount: TextView
@@ -103,6 +105,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         content = ContentPane(this, prefs, onChanged = ::updateSourceWarnings)
 
         diagnostics = DiagnosticsPane(this)
+        myMedia = MyMediaPane(this, prefs, OwnMedia(applicationContext))
 
         val root = FocusRoot(this)
         navCol = buildNav()
@@ -118,6 +121,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         val display = buildDisplayPane()
         addSection("Display", display, { firstFocusableIn(display) }) {}
         addSection("Diagnostics", diagnostics.view, diagnostics::firstFocusable) { if (it) loadDiagnostics() }
+        addSection("My media", myMedia.view, myMedia::firstFocusable, myMedia::setShown)
         val setup = buildSetupPane()
         addSection("Setup", setup, { firstFocusableIn(setup) }) {}
 
@@ -137,12 +141,15 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         DownloadController.observe(this)
         seenFinishedRuns = DownloadController.finishedRuns
         download.render()
+        myMedia.setStarted(true)   // the upload page only runs while this screen is up
+        DownloadController.attachIfRefreshing(this)   // a fill that started before we opened
         loadLibrary()   // the screensaver may have changed the cache while we were away
         updater.check()   // offers a newer GitHub build, if any
     }
 
     override fun onStop() {
         DownloadController.unobserve(this)
+        myMedia.setStarted(false)
         main.removeCallbacks(reloadLibrary)
         super.onStop()
     }
@@ -277,14 +284,14 @@ class SettingsActivity : Activity(), DownloadController.Observer {
             isFocusable = true
             isClickable = true
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(52)
-            setPadding(dp(16), dp(8), dp(16), dp(8))
+            minHeight = dp(40)   // seven sections plus the test button have to fit a 1080p nav
+            setPadding(dp(16), dp(6), dp(16), dp(6))
             setBackgroundResource(R.drawable.ad_nav_bg)
             setTextColor(getColorStateList(R.color.ad_nav_text))
             focusScale(1.03f) { has -> if (has) select(index) }
             setOnClickListener { enterPane() }
         }
-        navCol.addView(nav, Ui.lp().apply { topMargin = dp(4) })
+        navCol.addView(nav, Ui.lp().apply { topMargin = dp(3) })
         pane.visibility = View.GONE
         paneHost.addView(pane, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         sections.add(Section(nav, pane, entry, onShown))
@@ -484,6 +491,6 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         private const val NAV_W = 300
         private const val SECTION_LIBRARY = 0
         private const val SECTION_DOWNLOAD = 1
-        private const val SECTION_SETUP = 5
+        private const val SECTION_SETUP = 6
     }
 }

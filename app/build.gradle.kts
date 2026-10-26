@@ -55,6 +55,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true   // NewPipeExtractor needs java.time / NIO below API 33
     }
     testOptions { unitTests.isReturnDefaultValues = true }
     kotlinOptions {
@@ -63,7 +64,12 @@ android {
 }
 
 dependencies {
-    // Intentionally none at runtime. HttpURLConnection + org.json (bundled) + BitmapFactory.
+    // Runtime: nothing but the YouTube extractor below, which only the "Save to TV" button uses.
+    // Everything else is HttpURLConnection + org.json (bundled) + BitmapFactory + MediaPlayer.
+    // NewPipeExtractor is GPL-3.0 like this app. Pinned to a release tag; update deliberately,
+    // YouTube changes break old versions.
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
     // Tests only: android.jar's org.json is stubbed on the JVM, so use the real one.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")

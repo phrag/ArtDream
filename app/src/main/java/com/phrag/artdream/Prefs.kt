@@ -82,12 +82,25 @@ class Prefs(ctx: Context) {
             .putStringSet("favourites", favourites - key).apply()
     }
 
+    /** How the user's own pictures and videos mix with the museum art: [OWN_MIX], [OWN_ONLY] or [OWN_OFF]. */
+    var ownMode: String
+        get() = sp.getString("own_mode", OWN_MIX) ?: OWN_MIX
+        set(v) = sp.edit().putString("own_mode", v).apply()
+
+    /** Sound on own videos. Off by default: a screensaver shouldn't start talking in a quiet room. */
+    var videoSound: Boolean
+        get() = sp.getBoolean("video_sound", false)
+        set(v) = sp.edit().putBoolean("video_sound", v).apply()
+
     fun isSourceOn(id: String): Boolean = sp.getBoolean("src_$id", true)
     fun setSourceOn(id: String, on: Boolean) = sp.edit().putBoolean("src_$id", on).apply()
 
     companion object {
         const val NIGHT_OFF = "off"
         const val NIGHT_AUTO = "auto"
+        const val OWN_MIX = "mix"
+        const val OWN_ONLY = "only"
+        const val OWN_OFF = "off"
         const val GROUP_RANDOM = "random"
         const val GROUP_BY_TYPE = "type"
         val INTERVALS = intArrayOf(30, 60, 120, 300, 600)
