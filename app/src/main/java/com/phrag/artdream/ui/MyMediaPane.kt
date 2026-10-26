@@ -155,7 +155,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         modeRow.setSub(when (prefs.ownMode) {
             Prefs.OWN_ONLY -> "Only your pictures and videos; nothing is downloaded (art is used if you have none)"
             Prefs.OWN_OFF -> "Your pictures and videos are kept but not shown"
-            else -> "Your pictures and videos play along with the art"
+            else -> "One of yours after every three art slides"
         })
     }
 

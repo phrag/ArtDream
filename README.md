@@ -72,7 +72,8 @@ To add a source: add a class implementing `source/ArtSource.kt` and list it in `
 Settings → **My media** adds your own content to the screensaver. It's kept apart from the
 museum cache: never trimmed, never counted as a download, not hit by the Landscape-only filter,
 and only you remove it. Up to 3 GB in total (1 GB per file), and it never fills the TV's last 1 GB.
-"Show my media" is *Mixed* (with the art), *Only mine* (nothing is downloaded; art is used if you
+"Show my media" is *Mixed* (one of yours after every three art slides, so a single upload still
+turns up within a few minutes), *Only mine* (nothing is downloaded; art is used if you
 have none) or *Off*. Videos play muted unless you turn on *Sound on videos*, loop if shorter than
 the slide time, and are cut after 5 minutes.
 
@@ -92,7 +93,8 @@ Three ways to add things:
 **YouTube links** have two modes on the page:
 
 - **Play link** streams the video in the screensaver through YouTube's embedded player (muted,
-  needs internet, may show ads, and not every video allows embedding; one that fails is skipped
+  starting at a random point in a long video, for as long as a slide lasts; needs internet, may
+  show ads, and not every video allows embedding; one that fails is skipped
   and left out for 15 minutes). On the test TV a YouTube page loaded within ~30 s of another sat
   idle for about 30 s before it started, so a non-YouTube slide is preferred right after one.
 - **Save to TV** downloads the video (best H.264 stream up to 1080p, plus AAC audio, joined

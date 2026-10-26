@@ -191,7 +191,7 @@ class Slideshow(private val context: Context) {
         if (!running) return
         val gen = ++generation
         main.removeCallbacksAndMessages(null)
-        if (queue.isEmpty()) queue.addAll(order(playlist()))
+        if (queue.isEmpty()) queue.addAll(buildQueue())
         val next = takeNext()
         if (next == null) {
             status.visibility = View.VISIBLE
@@ -228,6 +228,32 @@ class Slideshow(private val context: Context) {
                 }
             }
         }
+    }
+
+    /**
+     * One pass through the playlist. In Mixed mode the user's own items get a guaranteed share, one
+     * after every [OWN_EVERY] museum slides: with a hundred museum images a lone uploaded video would
+     * otherwise come up about once in two hours and look like it hadn't worked. Own items take turns
+     * (shuffled, repeating when there are fewer than slots).
+     */
+    private fun buildQueue(): List<ArtCache.Entry> {
+        val all = playlist()
+        val mine = all.filter { it.art.source == OwnMedia.SOURCE }
+        val art = all.filter { it.art.source != OwnMedia.SOURCE }
+        if (mine.isEmpty() || art.isEmpty() || prefs.ownMode != Prefs.OWN_MIX) return order(all)
+
+        val turns = ArrayDeque<ArtCache.Entry>()
+        fun nextOwn(): ArtCache.Entry {
+            if (turns.isEmpty()) turns.addAll(mine.shuffled())
+            return turns.removeFirst()
+        }
+        val out = ArrayList<ArtCache.Entry>()
+        order(art).forEachIndexed { i, e ->
+            out.add(e)
+            if ((i + 1) % OWN_EVERY == 0) out.add(nextOwn())
+        }
+        if (out.none { it.art.source == OwnMedia.SOURCE }) out.add(nextOwn())   // fewer museum slides than a round
+        return out
     }
 
     /**
@@ -274,6 +300,7 @@ class Slideshow(private val context: Context) {
     }
 
     private fun show(slide: Slide) {
+        Log.d(TAG, "show ${slide.art.source}: ${slide.art.key}")
         status.visibility = View.GONE
         val intervalMs = prefs.intervalSec * 1000L
 
@@ -603,6 +630,8 @@ class Slideshow(private val context: Context) {
         const val TAG = "ArtDream"
         const val FADE_MS = 2_000L
         const val RUN = 8
+        /** In Mixed mode, one of the user's own slides after this many museum slides. */
+        const val OWN_EVERY = 3
         /** A video longer than this is cut here and the slideshow moves on. */
         const val VIDEO_CAP_MS = 5 * 60_000L
         /**

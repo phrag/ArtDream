@@ -91,13 +91,17 @@ object YouTube {
 <div id="p"></div>
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
-var player;
+var player,jumped=false;
 function onYouTubeIframeAPIReady(){
   player=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',
     playerVars:{autoplay:1,mute:${if (sound) 0 else 1},controls:0,rel:0,modestbranding:1,playsinline:1,iv_load_policy:3,disablekb:1,fs:0},
     events:{
       onReady:function(e){${if (sound) "" else "e.target.mute();"}e.target.playVideo();console.log('artdream:ready');},
-      onStateChange:function(e){console.log('artdream:state:'+e.data);if(e.data===0){e.target.seekTo(0);e.target.playVideo();}},
+      onStateChange:function(e){console.log('artdream:state:'+e.data);
+        if(e.data===1&&!jumped){jumped=true;var d=e.target.getDuration();
+          // A slide shows a minute or so: start somewhere inside a long video, not always at 0:00.
+          if(d>240){var t=Math.floor(Math.random()*(d-150));e.target.seekTo(t,true);console.log('artdream:start:'+t+'/'+Math.floor(d));}}
+        if(e.data===0){e.target.seekTo(0);e.target.playVideo();}},
       onError:function(e){console.log('artdream:error:'+e.data);}
     }});
 }
