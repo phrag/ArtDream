@@ -159,8 +159,8 @@ class OwnMedia(ctx: Context) {
         const val QUOTA_BYTES = 3L * 1024 * 1024 * 1024
         /** Never fill the TV's storage: stop accepting below this much free space. */
         const val MIN_FREE_BYTES = 1L * 1024 * 1024 * 1024
-        /** Per file. A 4K clip of a few minutes fits; a feature film doesn't. */
-        const val MAX_FILE_BYTES = 1L * 1024 * 1024 * 1024
+        /** Per file. A 4K clip of several minutes fits; a feature film doesn't. Long: 2 GB is past Int. */
+        const val MAX_FILE_BYTES = 2L * 1024 * 1024 * 1024
 
         private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
         private val VIDEO_EXT = setOf("mp4", "m4v", "mov", "mkv", "webm", "3gp", "ts")

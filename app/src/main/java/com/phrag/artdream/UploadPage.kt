@@ -56,12 +56,15 @@ small{color:var(--dim)}
 </main>
 <script>
 var drop=document.getElementById('drop'),pick=document.getElementById('pick'),pickany=document.getElementById('pickany'),
-    queue=document.getElementById('queue'),have=document.getElementById('have'),quota=document.getElementById('quota');
+    queue=document.getElementById('queue'),have=document.getElementById('have'),quota=document.getElementById('quota'),
+    maxFile=0;
 function mb(b){return b>=1073741824?(b/1073741824).toFixed(1)+' GB':(b/1048576).toFixed(b<10485760?1:0)+' MB';}
 function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
 function upload(file){return new Promise(function(done){
   var li=el('li'),n=el('span','n',file.name),s=el('span','s','waiting'),p=el('progress');p.max=1;p.value=0;
   li.append(n,p,s);queue.prepend(li);
+  // The TV refuses it too, but only after the browser has started sending it.
+  if(maxFile&&file.size>maxFile){p.remove();li.className='err';s.textContent='larger than '+mb(maxFile);done();return;}
   var x=new XMLHttpRequest();
   x.open('PUT','upload?name='+encodeURIComponent(file.name));
   x.upload.onprogress=function(e){if(e.lengthComputable){p.value=e.loaded/e.total;s.textContent=Math.round(100*e.loaded/e.total)+'%';}};
@@ -110,7 +113,8 @@ function refresh(){
     var jobs=document.getElementById('jobs');jobs.textContent='';
     d.jobs.slice().reverse().forEach(function(j){var li=el('li',j.failed?'err':(j.active?'':'done'));li.append(el('span','n',j.text));jobs.append(li);});
     if(d.jobs.some(function(j){return j.active;}))setTimeout(refresh,1500);
-    quota.textContent=mb(d.usedBytes)+' of '+mb(d.quotaBytes)+' used';
+    maxFile=d.maxFileBytes||0;
+    quota.textContent=mb(d.usedBytes)+' of '+mb(d.quotaBytes)+' used'+(maxFile?', up to '+mb(maxFile)+' per file':'');
     have.textContent='';
     d.items.forEach(function(it){
       var li=el('li'),b=el('button','quiet','Remove');
