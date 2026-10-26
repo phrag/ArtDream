@@ -58,7 +58,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
 
     private lateinit var prefs: Prefs
     private val io: ExecutorService = Executors.newFixedThreadPool(2) { r ->
-        Thread(r, "artdream-settings-io").apply { isDaemon = true }
+        Thread(r, "fartsaver-settings-io").apply { isDaemon = true }
     }
     /** Only ever touched on [io] threads (its constructor creates the cache dir). */
     private val cache by lazy { ArtCache(applicationContext) }
@@ -258,7 +258,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         setPadding(dp(28), dp(32), dp(24), dp(24))
         clipChildren = false
         clipToPadding = false
-        addView(Ui.text(context, "ArtDream", Ui.TITLE_SP).apply {
+        addView(Ui.text(context, "fArtSaver", Ui.TITLE_SP).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setPadding(dp(12), 0, 0, 0)
         })
@@ -412,7 +412,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
 
     private fun buildSetupPane(): View {
         val (scroll, col) = paneColumn("Setup",
-            "To use ArtDream as your screensaver, open the system screensaver settings and choose “ArtDream” " +
+            "To use fArtSaver as your screensaver, open the system screensaver settings and choose “fArtSaver” " +
                 "under Screen saver. You can also set how long the TV waits before it starts there.")
         col.addView(Ui.button(this, "Open screensaver settings") { openDreamSettings() },
             Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8); bottomMargin = dp(20) })
@@ -420,7 +420,7 @@ class SettingsActivity : Activity(), DownloadController.Observer {
             setBackgroundResource(R.drawable.ad_card_bg)
             setPadding(dp(24), dp(20), dp(24), dp(22))
             addView(Ui.text(context, "Google TV", Ui.LABEL_SP))
-            addView(Ui.body(context, "Google TV's menu only offers Ambient mode. Set ArtDream from a computer " +
+            addView(Ui.body(context, "Google TV's menu only offers Ambient mode. Set fArtSaver from a computer " +
                 "with adb instead:"))
             addView(Ui.text(context, "adb shell settings put secure screensaver_components $packageName/.ArtDream",
                 Ui.SMALL_SP, R.color.ad_accent).apply {

@@ -33,7 +33,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: artdream-debug-apk
+          name: fartsaver-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -44,21 +44,21 @@ jobs:
           path: app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
-      # Rolling public download: https://github.com/<owner>/<repo>/releases/latest/download/artdream.apk
+      # Rolling public download: https://github.com/<owner>/<repo>/releases/latest/download/fartsaver.apk
       - name: Publish "latest" release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk artdream.apk
+          cp app/build/outputs/apk/debug/app-debug.apk fartsaver.apk
           git tag -f latest
           git push -f origin refs/tags/latest
           notes="Debug build of ${GITHUB_SHA::7} from main, $(date -u +%F). Replaced automatically on every push to main."
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest --title "Latest build" --notes "$notes" --latest
-            gh release upload latest artdream.apk --clobber
+            gh release upload latest fartsaver.apk --clobber
           else
-            gh release create latest artdream.apk --title "Latest build" --notes "$notes" --latest
+            gh release create latest fartsaver.apk --title "Latest build" --notes "$notes" --latest
           fi
 
       # Self-updater metadata (Updater.kt). Uploaded after the APK, so it never
@@ -68,8 +68,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          printf '{"sha":"%s","time":%s,"apk":"artdream.apk","sha256":"%s","size":%s}\n' \
+          printf '{"sha":"%s","time":%s,"apk":"fartsaver.apk","sha256":"%s","size":%s}\n' \
             "$GITHUB_SHA" "$(git log -1 --format=%ct)" \
-            "$(sha256sum artdream.apk | cut -d' ' -f1)" "$(stat -c%s artdream.apk)" > version.json
+            "$(sha256sum fartsaver.apk | cut -d' ' -f1)" "$(stat -c%s fartsaver.apk)" > version.json
           cat version.json
           gh release upload latest version.json --clobber

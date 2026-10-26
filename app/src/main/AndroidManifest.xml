@@ -15,7 +15,7 @@
     <!-- No backup or device transfer: the cache is re-downloadable and the prefs are trivial.
          allowBackup covers Android 11 and older (so no fullBackupContent), the rules 12+. -->
     <application
-        android:label="ArtDream"
+        android:label="fArtSaver"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/banner"
@@ -46,11 +46,13 @@
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
 
         <!-- The screensaver itself. Shows up under Settings > Screen saver on
-             stock Android TV / Shield; on Google TV set it via adb (see README). -->
+             stock Android TV / Shield; on Google TV set it via adb (see README).
+             The class keeps the app's old name: renaming it would change the
+             component users selected and reset their screensaver. -->
         <service
             android:name=".ArtDream"
             android:exported="true"
-            android:label="ArtDream"
+            android:label="fArtSaver"
             android:permission="android.permission.BIND_DREAM_SERVICE">
             <intent-filter>
                 <action android:name="android.service.dreams.DreamService" />
@@ -58,7 +60,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.service.dream"
-                android:resource="@xml/art_dream" />
+                android:resource="@xml/dream" />
         </service>
 
         <!-- Daily background top-up of the image cache. -->

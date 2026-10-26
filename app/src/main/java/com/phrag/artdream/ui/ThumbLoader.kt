@@ -28,7 +28,7 @@ class ThumbLoader(private val targetW: Int, private val targetH: Int) {
 
     private val main = Handler(Looper.getMainLooper())
     private val pool: ExecutorService = Executors.newFixedThreadPool(2) { r ->
-        Thread(r, "artdream-thumbs").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
+        Thread(r, "fartsaver-thumbs").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
     }
 
     // Size in KB; at most 1/8 of the heap and never more than 32MB.

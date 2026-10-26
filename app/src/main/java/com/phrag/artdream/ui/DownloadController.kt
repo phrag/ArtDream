@@ -54,13 +54,13 @@ object DownloadController {
     /** Incremented every time a run (ours or the screensaver's) finishes. */
     var finishedRuns = 0; private set
 
-    private const val TAG = "ArtDream"
+    private const val TAG = "fArtSaver"
     private const val RECENT_CAP = 40
     private const val POLL_MS = 1500L
 
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "artdream-download").apply { isDaemon = true }
+        Thread(r, "fartsaver-download").apply { isDaemon = true }
     }
     private val observers = LinkedHashSet<Observer>()
     private var runId = 0
