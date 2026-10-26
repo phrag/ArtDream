@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Leanback banner, 320x180dp: a gilt-framed landscape beside the "ArtDream"
+<!-- Leanback banner, 320x180dp: a gilt-framed landscape beside the "fArtSaver"
      wordmark. The wordmark is drawn as stroked paths (vectors can't render text).
      VectorRaster is suppressed: the size is the TV banner spec, and minSdk 26
      never needs the raster fallback that check guards. -->
@@ -69,7 +69,7 @@
         android:fillColor="#FF1B2D22"
         android:pathData="M40,135Q44,112 48,110Q52,112 56,135Z" />
 
-    <!-- Wordmark "ArtDream": 28-unit capitals/ascenders, 18-unit x-height,
+    <!-- Wordmark "fArtSaver": 28-unit capitals/ascenders, 18-unit x-height,
          stroked in gilt. Scaled to 80% and moved to the right of the frame. -->
     <group
         android:scaleX="0.8"
@@ -81,14 +81,15 @@
             android:strokeWidth="4"
             android:strokeLineCap="round"
             android:strokeLineJoin="round"
-            android:pathData="M72,118L84,90L96,118M78,108L90,108
-                M101,118L101,100M101,108Q105,100 115,100
-                M124,92L124,112Q124,118 130,118L132,118M120,102L131,102
-                M137,90L137,118L147,118A14,14 0 0 0 147,90Z
-                M166,118L166,100M166,108Q170,100 180,100
-                M185,109L199,109Q199,100 192,100Q185,100 185,109Q185,118 193,118Q198,118 199,114
-                M217,100L217,118M217,110Q217,100 210,100Q204,100 204,109Q204,118 210,118Q217,118 217,110
-                M223,118L223,100M223,108Q223,100 229,100Q235,100 235,108L235,118M235,108Q235,100 241,100Q247,100 247,108L247,118" />
+            android:pathData="M77,118L77,96Q77,90 83,90L85,90M72,102L83,102
+                M90,118L102,90L114,118M96,108L108,108
+                M119,118L119,100M119,108Q123,100 133,100
+                M142,92L142,112Q142,118 148,118L150,118M138,102L149,102
+                M172,94Q169,90 164,90Q156,90 156,97Q156,103 164,104Q172,105 172,111Q172,118 164,118Q158,118 155,114
+                M190,100L190,118M190,110Q190,100 183,100Q177,100 177,109Q177,118 183,118Q190,118 190,110
+                M195,100L202,118L209,100
+                M214,109L228,109Q228,100 221,100Q214,100 214,109Q214,118 222,118Q227,118 228,114
+                M233,118L233,100M233,108Q237,100 247,100" />
     </group>
 
     <!-- Hairline gilt rule under the wordmark. -->

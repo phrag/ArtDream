@@ -36,7 +36,7 @@ object RijksSource : ArtSource {
                 parseObject(Http.getString(uri))
             } catch (e: Exception) {
                 if (Backoff.isRateLimit(e)) throw e   // let ArtCache back the whole source off
-                Log.w("ArtDream", "rijks $uri: $e")
+                Log.w("fArtSaver", "rijks $uri: $e")
                 null
             }
         }

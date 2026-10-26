@@ -76,7 +76,7 @@ object MasterpiecesSource : ArtSource {
                 a?.copy(source = id, id = "${p.museum.name.lowercase()}-${p.id}")
             } catch (e: Exception) {
                 if (Backoff.isRateLimit(e)) throw e   // let ArtCache back the whole source off
-                Log.w("ArtDream", "masterpiece ${p.museum} ${p.id}: $e")
+                Log.w("fArtSaver", "masterpiece ${p.museum} ${p.id}: $e")
                 null
             }
         }

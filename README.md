@@ -1,4 +1,4 @@
-# ArtDream
+# fArtSaver
 
 An Android TV screensaver that shows high-resolution, public-domain paintings
 from museum open-access collections. Built for NVIDIA Shield and stock Android TV
@@ -121,7 +121,7 @@ CI (`.github/workflows/build.yml`) builds and lints every push and pull request.
 Every push to `main` also refreshes the **Latest build** release, so the newest APK
 is always at a public, no-login link:
 
-https://github.com/phrag/ArtDream/releases/latest/download/artdream.apk
+https://github.com/phrag/ArtDream/releases/latest/download/fartsaver.apk
 
 (Branch and PR builds are only available as run artifacts, which need a GitHub login.)
 Builds are signed with the committed `app/debug.keystore`, so a new APK installs
@@ -136,19 +136,23 @@ build and has "Automatic update checks" (on by default) and "Check for updates n
 
 ```bash
 adb connect <tv-ip>:5555
-adb install -r artdream.apk   # or app/build/outputs/apk/debug/app-debug.apk
+adb install -r fartsaver.apk   # or app/build/outputs/apk/debug/app-debug.apk
 ```
+
+**Formerly ArtDream:** the app was renamed to fArtSaver. The app id (`com.phrag.artdream`),
+the screensaver service (`.ArtDream`) and the source package keep the old name, so existing
+installs update in place and stay selected as the screensaver.
 
 **Upgrading from a build before the package rename:** the app id changed from
 `com.example.artdream` to `com.phrag.artdream`, so Android sees a new app. Uninstall the old
 one once (`adb uninstall com.example.artdream`, or Settings → Apps), install the new APK, and
-choose ArtDream as the screensaver again (Google TV: rerun the `adb shell settings` command
+choose fArtSaver as the screensaver again (Google TV: rerun the `adb shell settings` command
 below). Downloaded paintings and settings don't carry over.
 
-Open **ArtDream** from the home screen once and press **Download more paintings now**.
+Open **fArtSaver** from the home screen once and press **Download more paintings now**.
 Then:
 
-- **Shield / stock Android TV:** Settings → Device Preferences → Screen saver → ArtDream.
+- **Shield / stock Android TV:** Settings → Device Preferences → Screen saver → fArtSaver.
 - **Google TV** (only offers Ambient mode in the menu):
   ```bash
   adb shell settings put secure screensaver_components com.phrag.artdream/.ArtDream
@@ -159,7 +163,7 @@ Then:
 
 ```
 app/src/main/java/com/phrag/artdream/
-├── ArtDream.kt          # the DreamService: slides, crossfade, Ken Burns, caption
+├── ArtDream.kt          # the DreamService (class keeps its old name, see below): slides, crossfade, Ken Burns, caption
 ├── ArtCache.kt          # on-disk playlist + background top-up / trim
 ├── Backoff.kt           # per-source rate-limit backoff (Retry-After, 15 min → 24 h)
 ├── RefreshJobService.kt # daily background top-up

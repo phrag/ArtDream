@@ -45,7 +45,7 @@ abstract class WikimediaSource(
             try {
                 parse(pages.getJSONObject(i))
             } catch (e: Exception) {
-                Log.w("ArtDream", "$id page $i: $e")
+                Log.w("fArtSaver", "$id page $i: $e")
                 null
             }
         }

@@ -17,5 +17,5 @@ dependencyResolutionManagement {
         }
     }
 }
-rootProject.name = "artdream"
+rootProject.name = "fartsaver"
 include(":app")

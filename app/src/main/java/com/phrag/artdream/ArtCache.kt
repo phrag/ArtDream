@@ -262,7 +262,7 @@ class ArtCache(ctx: Context) {
     }
 
     companion object {
-        private const val TAG = "ArtDream"
+        private const val TAG = "fArtSaver"
         const val TARGET = 30          // minimum playlist before we stop topping up eagerly
         const val BATCH = 10
         private const val RETRY_BUDGET_MS = 8_000L

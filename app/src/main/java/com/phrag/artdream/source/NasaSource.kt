@@ -41,7 +41,7 @@ abstract class NasaSource(
             try {
                 parse(items.getJSONObject(i))
             } catch (e: Exception) {
-                Log.w("ArtDream", "$id item $i: $e")
+                Log.w("fArtSaver", "$id item $i: $e")
                 null
             }
         }
