@@ -84,20 +84,36 @@ object YouTube {
      * The page the slideshow loads in a WebView. It talks back through console messages
      * ("artdream:ready", "artdream:state:N", "artdream:error:N") so no script bridge is exposed
      * to the frames YouTube serves. Muted unless [sound]; autoplay needs muting anyway on most WebViews.
+     *
+     * The player picks its quality from its size in CSS pixels, and a TV WebView has only about
+     * 960x540 of those (density 2), so it chose 480p. The player div is laid out at the screen's
+     * real pixel size and scaled back down to fit. Captions are off: YouTube switches them on by
+     * itself for a muted video, so the captions module is unloaded each time playback starts.
      */
     fun playerHtml(id: String, sound: Boolean): String = """<!doctype html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body,#p{margin:0;width:100%;height:100%;background:#000;overflow:hidden}</style></head><body>
-<div id="p"></div>
+<style>html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}
+#box{position:absolute;left:0;top:0;transform-origin:0 0}#p{width:100%;height:100%}</style></head><body>
+<div id="box"><div id="p"></div></div>
+<script>
+var dpr=Math.max(1,window.devicePixelRatio||1),box=document.getElementById('box');
+box.style.width=Math.round(innerWidth*dpr)+'px';box.style.height=Math.round(innerHeight*dpr)+'px';
+box.style.transform='scale('+(1/dpr)+')';
+</script>
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
-var player,jumped=false;
+var player,jumped=false,logged=false;
+function noCaptions(p){try{p.unloadModule('captions');p.unloadModule('cc');p.setOption('captions','track',{});}catch(x){}}
 function onYouTubeIframeAPIReady(){
   player=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',
-    playerVars:{autoplay:1,mute:${if (sound) 0 else 1},controls:0,rel:0,modestbranding:1,playsinline:1,iv_load_policy:3,disablekb:1,fs:0},
+    playerVars:{autoplay:1,mute:${if (sound) 0 else 1},controls:0,rel:0,modestbranding:1,playsinline:1,iv_load_policy:3,disablekb:1,fs:0,cc_load_policy:0,vq:'highres'},
     events:{
-      onReady:function(e){${if (sound) "" else "e.target.mute();"}e.target.playVideo();console.log('artdream:ready');},
+      onReady:function(e){${if (sound) "" else "e.target.mute();"}noCaptions(e.target);try{e.target.setPlaybackQuality('highres');}catch(x){}
+        e.target.playVideo();console.log('artdream:ready');console.log('artdream:size:'+box.style.width+'x'+box.style.height+'@'+dpr);},
+      onPlaybackQualityChange:function(e){console.log('artdream:quality:'+e.data);},
       onStateChange:function(e){console.log('artdream:state:'+e.data);
+        if(e.data===1){noCaptions(e.target);
+          if(!logged){logged=true;try{console.log('artdream:levels:'+e.target.getAvailableQualityLevels().join(','));}catch(x){}}}
         if(e.data===1&&!jumped){jumped=true;var d=e.target.getDuration();
           // A slide shows a minute or so: start somewhere inside a long video, not always at 0:00.
           if(d>240){var t=Math.floor(Math.random()*(d-150));e.target.seekTo(t,true);console.log('artdream:start:'+t+'/'+Math.floor(d));}}
