@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -36,6 +37,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         typeface = Typeface.MONOSPACE
         setPadding(0, ctx.dp(6), 0, ctx.dp(6))
     }
+    private val qrView = QrView(ctx)
     private val statusView = Ui.text(ctx, "", Ui.BODY_SP, R.color.ad_text2)
     private val usedView = Ui.body(ctx, "")
     private val listBox = Ui.column(ctx).apply { clipChildren = false; clipToPadding = false }
@@ -68,9 +70,15 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         col.addView(soundRow)
 
         col.addView(Ui.groupLabel(ctx, "Add from your phone or computer"))
-        col.addView(Ui.body(ctx, "On a device on the same Wi-Fi, open this address in a browser:"))
-        col.addView(addressView)
-        col.addView(statusView)
+        // Address and instructions on the left, a QR code of the same address on the right.
+        val addRow = Ui.row(ctx).apply { gravity = Gravity.TOP }
+        val addText = Ui.column(ctx)
+        addText.addView(Ui.body(ctx, "On a device on the same Wi-Fi, scan the code with the camera or open this address in a browser:"))
+        addText.addView(addressView)
+        addText.addView(statusView)
+        addRow.addView(addText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addRow.addView(qrView, LinearLayout.LayoutParams(ctx.dp(QR_DP), ctx.dp(QR_DP)).apply { marginStart = ctx.dp(24) })
+        col.addView(addRow)
 
         col.addView(Ui.groupLabel(ctx, "On this TV"))
         col.addView(usedView)
@@ -123,6 +131,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         }, token)
         if (!s.start()) {
             addressView.text = ""
+            qrView.setText(null)
             statusView.text = "Couldn't start the upload page (no free port)."
             reload()
             return
@@ -130,6 +139,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         server = s
         val urls = s.urls()
         addressView.text = urls.joinToString("\n") { it.removePrefix("http://") }
+        qrView.setText(urls.firstOrNull())   // the camera needs the scheme, so keep "http://"
         statusView.setTextColor(ctx.getColor(R.color.ad_text2))
         statusView.text = if (urls.isEmpty()) "No network address found. Connect the TV to Wi-Fi or Ethernet."
             else "Waiting for files…  (Only works while this screen is open. The address changes when the app restarts.)"
@@ -139,6 +149,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
     private fun stopServer() {
         server?.stop()
         server = null
+        qrView.setText(null)
     }
 
     private fun reload() {
@@ -186,6 +197,10 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private companion object {
+        const val QR_DP = 180
     }
 
     private fun mb(bytes: Long): String = when {
