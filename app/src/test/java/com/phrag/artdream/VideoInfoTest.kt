@@ -19,6 +19,7 @@ class VideoInfoTest {
     @Test fun codecFromCodecString() {
         assertEquals("VP9 profile 2, 10-bit", VideoInfo.codecName("video/x-vnd.on2.vp9", "vp09.02.51.10.01.09.16.09.00"))
         assertEquals("VP9", VideoInfo.codecName("video/x-vnd.on2.vp9", "vp9"))
+        assertEquals("VP9 profile 2, 10-bit", VideoInfo.codecName("video/x-vnd.on2.vp9", "vp9.2"))
         assertEquals("AV1 Main, 10-bit", VideoInfo.codecName("video/av01", "av01.0.12M.10.0.110.09.16.09.0"))
         assertEquals("H.264 High", VideoInfo.codecName("video/avc", "avc1.640028"))
         assertEquals("HEVC Main 10", VideoInfo.codecName("video/hevc", "hvc1.2.4.L153.B0"))

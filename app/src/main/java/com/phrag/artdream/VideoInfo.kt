@@ -39,7 +39,8 @@ object VideoInfo {
         when (f.firstOrNull()) {
             "vp09" -> return listOfNotNull("VP9 profile ${f.getOrNull(1)?.toIntOrNull() ?: "?"}",
                 f.getOrNull(3)?.toIntOrNull()?.let { "$it-bit" }).joinToString(", ")
-            "vp9" -> return "VP9"
+            // YouTube's short label: "vp9.2" is profile 2 (10-bit, its HDR streams).
+            "vp9" -> return f.getOrNull(1)?.toIntOrNull()?.let { "VP9 profile $it" + if (it >= 2) ", 10-bit" else "" } ?: "VP9"
             "av01" -> return listOfNotNull("AV1 " + when (f.getOrNull(1)) { "0" -> "Main"; "1" -> "High"; "2" -> "Professional"; else -> "?" },
                 f.getOrNull(3)?.toIntOrNull()?.let { "$it-bit" }).joinToString(", ")
             "avc1", "avc3" -> return "H.264" + (f.getOrNull(1)?.take(2)?.toIntOrNull(16)?.let { avcProfile(it) }?.let { " $it" } ?: "")
