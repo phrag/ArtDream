@@ -48,13 +48,21 @@ object YouTubeLive {
         val info = StreamInfo.getInfo(ServiceList.YouTube, YouTube.watchUrl(id))
         fun summary(s: VideoStream) = "${s.height}p${s.fps} ${s.codec}${if (StreamPicker.isHdr(s.codec.orEmpty())) " HDR" else ""}"
         Log.i(TAG, "youtube $id native, offered: " + info.videoOnlyStreams.joinToString { summary(it) })
+        logDecoders("video/x-vnd.on2.vp9")
+        logDecoders("video/av01")
         val maxHeight = if (screenH > 0) maxOf(screenH, 1080) else Int.MAX_VALUE
         val choice = StreamPicker.chooseLive(
             videoOnly = info.videoOnlyStreams.map(::describe),
             audio = info.audioStreams.map(::describe),
             maxHeight = maxHeight,
             hdrScreen = hdrScreen,
-            canPlay = { canDecode(it.codec, (it.ref as VideoStream).width, it.height, it.fps, StreamPicker.isHdr(it.codec)) },
+            canPlay = {
+                val hdr = StreamPicker.isHdr(it.codec)
+                val (ok, why) = canDecode(it.codec, (it.ref as VideoStream).width, it.height, it.fps, hdr, hdrScreen)
+                if (hdr) Log.i(TAG, "youtube $id native, HDR candidate ${it.height}p${it.fps} ${it.codec}: " +
+                    (if (ok) "accepted, " else "rejected, ") + why)
+                ok
+            },
         )
         if (choice == null) {
             Log.w(TAG, "youtube $id native: nothing offered decodes here")
@@ -94,14 +102,20 @@ object YouTubeLive {
 
     private val codecs by lazy { MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { !it.isEncoder } }
 
-    /** Whether a hardware decoder here plays [codec] at this size and rate (and as HDR, if [hdr]). */
-    private fun canDecode(codec: String, width: Int, height: Int, fps: Int, hdr: Boolean): Boolean {
+    /**
+     * Whether a hardware decoder here plays [codec] at this size and rate, and the reason, for the
+     * log. An HDR stream also needs the decoder to take 10-bit HDR: either it lists an HDR profile
+     * (VP9Profile2HDR, AV1ProfileMain10HDR10, …) or, on an HDR screen, the plain 10-bit profile
+     * (VP9 Profile 2/3, AV1 Main 10). The SHIELD's VP9 decoder lists only plain Profile 2, yet
+     * HDR10 metadata travels in the stream itself and reaches the display either way.
+     */
+    private fun canDecode(codec: String, width: Int, height: Int, fps: Int, hdr: Boolean, hdrScreen: Boolean): Pair<Boolean, String> {
         val c = codec.lowercase()
         val mime = when {
             c.startsWith("avc1") -> "video/avc"
             c.startsWith("vp09") || c == "vp9" || c.startsWith("vp9.") -> "video/x-vnd.on2.vp9"
             c.startsWith("av01") -> "video/av01"
-            else -> return false
+            else -> return false to "unknown codec"
         }
         val hdrProfiles = when (mime) {
             "video/x-vnd.on2.vp9" -> setOf(CodecProfileLevel.VP9Profile2HDR, CodecProfileLevel.VP9Profile2HDR10Plus,
@@ -109,17 +123,46 @@ object YouTubeLive {
             "video/av01" -> setOf(CodecProfileLevel.AV1ProfileMain10HDR10, CodecProfileLevel.AV1ProfileMain10HDR10Plus)
             else -> emptySet()
         }
+        val tenBitProfiles = when (mime) {
+            "video/x-vnd.on2.vp9" -> setOf(CodecProfileLevel.VP9Profile2, CodecProfileLevel.VP9Profile3)
+            "video/av01" -> setOf(CodecProfileLevel.AV1ProfileMain10)
+            else -> emptySet()
+        }
         val w = if (width > 0) width else height * 16 / 9
-        return codecs.any { info ->
-            if (info.supportedTypes.none { it.equals(mime, ignoreCase = true) }) return@any false
+        val why = ArrayList<String>()
+        for (info in codecs) {
+            if (info.supportedTypes.none { it.equals(mime, ignoreCase = true) }) continue
             val hardware = if (Build.VERSION.SDK_INT >= 29) info.isHardwareAccelerated
                 else !info.name.startsWith("OMX.google.") && !info.name.startsWith("c2.android.")
-            if (!hardware) return@any false
-            val caps = runCatching { info.getCapabilitiesForType(mime) }.getOrNull() ?: return@any false
-            val video = caps.videoCapabilities ?: return@any false
-            if (!video.areSizeAndRateSupported(w, height, fps.coerceAtLeast(1).toDouble())) return@any false
-            !hdr || caps.profileLevels.any { it.profile in hdrProfiles }
+            if (!hardware) { why += "${info.name}: software"; continue }
+            val caps = runCatching { info.getCapabilitiesForType(mime) }.getOrNull()
+            val video = caps?.videoCapabilities
+            if (caps == null || video == null) { why += "${info.name}: no video caps"; continue }
+            if (!video.areSizeAndRateSupported(w, height, fps.coerceAtLeast(1).toDouble())) {
+                why += "${info.name}: not ${w}x$height@$fps"; continue
+            }
+            if (!hdr) return true to info.name
+            val profiles = caps.profileLevels.map { it.profile }.toSet()
+            when {
+                profiles.any { it in hdrProfiles } -> return true to "${info.name} lists an HDR profile"
+                hdrScreen && profiles.any { it in tenBitProfiles } -> return true to "${info.name} lists the 10-bit profile (HDR screen)"
+                else -> why += "${info.name}: no 10-bit/HDR profile (profiles ${profiles.sorted().joinToString(",") { "0x" + it.toString(16) }}, hdrScreen=$hdrScreen)"
+            }
         }
+        return false to (why.joinToString("; ").ifEmpty { "no $mime decoder" })
+    }
+
+    /** One log line per decoder type: each hardware decoder's name and the profiles it lists. */
+    private val logged = HashSet<String>()
+    @Synchronized private fun logDecoders(mime: String) {
+        if (!logged.add(mime)) return
+        val lines = codecs.filter { info -> info.supportedTypes.any { it.equals(mime, ignoreCase = true) } }.map { info ->
+            val profiles = runCatching { info.getCapabilitiesForType(mime).profileLevels.map { it.profile }.toSet().sorted() }
+                .getOrDefault(emptyList())
+            val hw = if (Build.VERSION.SDK_INT >= 29) info.isHardwareAccelerated else !info.name.startsWith("OMX.google.")
+            "${info.name}${if (hw) "" else " (software)"} profiles=" + profiles.joinToString(",") { "0x" + it.toString(16) }
+        }
+        Log.i(TAG, "decoders for $mime: " + lines.joinToString("; ").ifEmpty { "none" })
     }
 
     /**
