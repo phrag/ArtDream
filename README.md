@@ -1,5 +1,10 @@
 # fArtSaver
 
+[![Build](https://img.shields.io/github/actions/workflow/status/phrag/ArtDream/build.yml?branch=main&label=Build)](https://github.com/phrag/ArtDream/actions/workflows/build.yml)
+[![Licence: GPL-3.0](https://img.shields.io/github/license/phrag/ArtDream)](LICENSE)
+![Android TV 8.0+](https://img.shields.io/badge/Android%20TV-8.0%2B-3DDC84?logo=android&logoColor=white)
+![No Google Play Services](https://img.shields.io/badge/Google%20Play%20Services-none-2ea44f)
+
 An Android TV screensaver that shows high-resolution, public-domain paintings
 from museum open-access collections. Built for NVIDIA Shield and stock Android TV
 boxes. Plain Kotlin; the third-party libraries are NewPipeExtractor and Media3 ExoPlayer, used only
