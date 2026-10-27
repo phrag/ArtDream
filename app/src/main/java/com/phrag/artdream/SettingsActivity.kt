@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -265,10 +266,11 @@ class SettingsActivity : Activity(), DownloadController.Observer {
         setPadding(dp(28), dp(32), dp(24), dp(24))
         clipChildren = false
         clipToPadding = false
-        addView(Ui.text(context, "fArtSaver", Ui.TITLE_SP).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setPadding(dp(12), 0, 0, 0)
-        })
+        addView(ImageView(context).apply {
+            setImageResource(R.drawable.logo_lockup)
+            contentDescription = "fArtSaver"
+            setPadding(dp(12), 0, 0, dp(6))
+        }, Ui.lp(ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(Ui.text(context, "Art & imagery screensaver", Ui.SMALL_SP, R.color.ad_text3).apply {
             setPadding(dp(12), 0, 0, dp(20))
         })
