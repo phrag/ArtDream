@@ -86,36 +86,49 @@ object YouTube {
      * to the frames YouTube serves. Muted unless [sound]; autoplay needs muting anyway on most WebViews.
      *
      * The player picks its quality from its size in CSS pixels, and a TV WebView has only about
-     * 960x540 of those (density 2), so it chose 480p. The player div is laid out at the screen's
-     * real pixel size and scaled back down to fit. The page can start before the WebView has been
-     * laid out (the window measures 0x0, and a player made then stays at 480p), so the player is
-     * only created once the window has a real size, falling back to the screen's size after 3 s;
-     * it is resized on every window resize, asking for the highest quality again each time.
+     * 960x540 of those (density 2), so it chose 480p. The player div is laid out at the display's
+     * real pixel size and scaled back down to fit: [screenW] x [screenH] is the display mode
+     * (3840x2160 on a 4K TV, while the WebView itself only renders at 1920x1080), falling back to
+     * the window's size times its density. The page can start before the WebView has been laid
+     * out (the window measures 0x0, and a player made then stays at 480p), so the player is only
+     * created once the window has a real size, falling back to the screen's size after 3 s; it is
+     * resized on every window resize. The best quality YouTube lists is asked for when playback
+     * starts and every 5 s after while it plays something lower (YouTube ignores the request
+     * until the video's levels are known, and its own picker can settle lower).
      * Captions are off: YouTube switches them on by itself for a muted video, so the captions
      * module is unloaded each time playback starts.
      */
-    fun playerHtml(id: String, sound: Boolean): String = """<!doctype html><html><head>
+    fun playerHtml(id: String, sound: Boolean, screenW: Int = 0, screenH: Int = 0): String = """<!doctype html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}
 #box{position:absolute;left:0;top:0;transform-origin:0 0}#p{width:100%;height:100%}</style></head><body>
 <div id="box"><div id="p"></div></div>
 <script>
-var box=document.getElementById('box'),player,apiReady=false,jumped=false,logged=false,waited=0;
-function best(p){try{p.setPlaybackQuality('highres');}catch(x){}}
+var box=document.getElementById('box'),player,apiReady=false,jumped=false,levels='',waited=0,nudges=0;
+var SW=${screenW.coerceAtLeast(0)},SH=${screenH.coerceAtLeast(0)};
+// The top level YouTube lists for this video ('' until it knows them), else a generic "highest".
+function topLevel(p){try{var l=p.getAvailableQualityLevels()||[],j=l.join(',');
+  if(j!==levels){levels=j;console.log('artdream:levels:'+j);}
+  for(var i=0;i<l.length;i++)if(l[i]!=='auto')return l[i];}catch(x){}return '';}
+function best(p){try{p.setPlaybackQuality(topLevel(p)||'highres');}catch(x){}}
 function noCaptions(p){try{p.unloadModule('captions');p.unloadModule('cc');p.setOption('captions','track',{});}catch(x){}}
-// Lays the box out at the window's size in real pixels; false while the window is still 0x0.
+// Lays the box out at the display's size in real pixels; false while the window is still 0x0.
 function fit(){
   var dpr=Math.max(1,window.devicePixelRatio||1),de=document.documentElement;
   var w=innerWidth||de.clientWidth,h=innerHeight||de.clientHeight;
   if((!w||!h)&&waited>=30){w=screen.width;h=screen.height;}
   if(!w||!h)return false;
-  var W=Math.round(w*dpr),H=Math.round(h*dpr);
+  var k=Math.max(dpr,SW/w,SH/h),W=Math.round(w*k),H=Math.round(h*k);
   if(box.style.width===W+'px'&&box.style.height===H+'px')return true;
-  box.style.width=W+'px';box.style.height=H+'px';box.style.transform='scale('+(1/dpr)+')';
-  console.log('artdream:size:'+W+'x'+H+'@'+dpr);
+  box.style.width=W+'px';box.style.height=H+'px';box.style.transform='scale('+(1/k)+')';
+  console.log('artdream:size:'+W+'x'+H+'@'+dpr+' window:'+w+'x'+h+' screen:'+SW+'x'+SH);
   if(player&&player.setSize){player.setSize(W,H);best(player);}
   return true;
 }
+// While playing below the top level, ask again (YouTube can settle lower, or ignore an early ask).
+setInterval(function(){if(!player||!player.getPlayerState||player.getPlayerState()!==1)return;
+  var t=topLevel(player),q=player.getPlaybackQuality();
+  if(t&&q!==t&&nudges<12){nudges++;console.log('artdream:nudge:'+q+'->'+t);best(player);}},5000);
 function start(){if(player||!apiReady||!fit())return;
   player=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',
     playerVars:{autoplay:1,mute:${if (sound) 0 else 1},controls:0,rel:0,modestbranding:1,playsinline:1,iv_load_policy:3,disablekb:1,fs:0,cc_load_policy:0,vq:'highres'},
@@ -124,8 +137,7 @@ function start(){if(player||!apiReady||!fit())return;
         e.target.playVideo();console.log('artdream:ready');},
       onPlaybackQualityChange:function(e){console.log('artdream:quality:'+e.data);},
       onStateChange:function(e){console.log('artdream:state:'+e.data);
-        if(e.data===1){noCaptions(e.target);best(e.target);
-          if(!logged){logged=true;try{console.log('artdream:levels:'+e.target.getAvailableQualityLevels().join(','));}catch(x){}}}
+        if(e.data===1){noCaptions(e.target);best(e.target);}
         if(e.data===1&&!jumped){jumped=true;var d=e.target.getDuration();
           // A slide shows a minute or so: start somewhere inside a long video, not always at 0:00.
           if(d>240){var t=Math.floor(Math.random()*(d-150));e.target.seekTo(t,true);console.log('artdream:start:'+t+'/'+Math.floor(d));}}

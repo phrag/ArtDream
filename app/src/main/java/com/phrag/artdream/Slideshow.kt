@@ -23,6 +23,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowManager
 import android.view.animation.LinearInterpolator
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -446,7 +447,7 @@ class Slideshow(private val context: Context) {
         slide.web = web
         slide.releaseWeb = ::releaseWeb
         lastYouTubeLoadAt = System.currentTimeMillis()
-        web.loadDataWithBaseURL(YouTube.PLAYER_BASE_URL, YouTube.playerHtml(slide.youtubeId!!, prefs.videoSound), "text/html", "utf-8", null)
+        web.loadDataWithBaseURL(YouTube.PLAYER_BASE_URL, YouTube.playerHtml(slide.youtubeId!!, prefs.videoSound, displayW, displayH), "text/html", "utf-8", null)
         main.postDelayed({
             if (!ready && !slide.disposed) {
                 Log.w(TAG, "youtube ${slide.youtubeId}: player never started")
@@ -455,6 +456,21 @@ class Slideshow(private val context: Context) {
         }, YOUTUBE_START_MS)
         return web
     }
+
+    /**
+     * The display's own resolution. On a 4K TV the app (and its WebViews) render at 1920x1080
+     * while the TV shows 3840x2160; the YouTube page sizes its player to this so YouTube picks 4K.
+     */
+    @Suppress("DEPRECATION")
+    private val displayMode by lazy {
+        try {
+            (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.mode
+        } catch (e: Exception) {
+            null
+        }
+    }
+    private val displayW get() = displayMode?.let { maxOf(it.physicalWidth, it.physicalHeight) } ?: 0
+    private val displayH get() = displayMode?.let { minOf(it.physicalWidth, it.physicalHeight) } ?: 0
 
     /**
      * WebViews are kept and reused between slides. Destroying one while the next slide's page
