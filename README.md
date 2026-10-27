@@ -106,9 +106,9 @@ Three ways to add things:
 - **Play link** streams the video in the screensaver (muted, starting at a random point in a long
   video, for as long as a slide lasts; needs internet). It plays in the app's own player
   (NewPipeExtractor finds the streams, Media3 plays them on a SurfaceView): the best stream the TV
-  decodes in hardware, up to the screen's resolution, in HDR on an HDR TV when YouTube has it
-  (HDR10 or HLG; YouTube has no Dolby Vision). If that fails, the slide switches to YouTube's
-  embedded player, which is SDR only, may show ads, and needs the video to allow embedding; one that
+  decodes in hardware, up to the screen's resolution, in SDR (YouTube's HDR is VP9 Profile 2 or
+  AV1, which the SHIELD can't decode; for HDR, add HDR10 or Dolby Vision files to My media). If
+  that fails, the slide switches to YouTube's embedded player, which may show ads, and needs the video to allow embedding; one that
   fails there too is skipped and left out for 15 minutes. On the test TV a YouTube page loaded within ~30 s of another sat
   idle for about 30 s before it started, so a non-YouTube slide is preferred right after one.
 - **Save to TV** downloads the video so it plays offline like any other video: the tallest SDR
@@ -189,7 +189,7 @@ app/src/main/java/com/phrag/artdream/
 ├── OwnMedia.kt          # the user's own pictures/videos/YouTube links (kept apart from ArtCache)
 ├── UploadServer.kt / UploadPage.kt   # the "add from your phone" page (only while My media is open)
 ├── YouTube.kt           # link parsing, oEmbed, the embedded-player page (fallback)
-├── YouTubeLive.kt       # stream URLs + decoder checks for playing links natively (HDR)
+├── YouTubeLive.kt       # stream URLs + decoder checks for playing links natively
 ├── YouTubeDownloads.kt / StreamPicker.kt / Remux.kt / NewPipeDownloader.kt   # Save to TV
 ├── Artwork.kt / Http.kt
 └── source/              # one class per museum API

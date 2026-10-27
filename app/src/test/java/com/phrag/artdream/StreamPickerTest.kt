@@ -120,31 +120,21 @@ class StreamPickerTest {
     private val av1 = v("2160av1", 2160, fps = 60, codec = "av01.0.12M.08")
     private val avc = v("1080avc", 1080)
 
-    @Test fun liveTakesTheHdrStreamOnAnHdrScreen() {
+    @Test fun liveTakesTheTallestSdrStreamAndBestAudio() {
         val c = StreamPicker.chooseLive(listOf(avc, sdr4k, hdr4k), listOf(a("128", 128), a("160o", 160, "opus", m4a = false)),
-            maxHeight = 2160, hdrScreen = true) { true }!!
-        assertEquals("2160hdr", c.video.ref)
+            maxHeight = 2160) { true }!!
+        assertEquals("2160sdr", c.video.ref)
         assertEquals("160o", c.audio!!.ref)
     }
 
-    @Test fun liveTakesSdrOnAnSdrScreen() {
-        val c = StreamPicker.chooseLive(listOf(hdr4k, sdr4k), emptyList(), maxHeight = 2160, hdrScreen = false) { true }!!
-        assertEquals("2160sdr", c.video.ref)
-        assertNull(c.audio)
-    }
-
     @Test fun liveSkipsWhatTheTvCantDecodeAndWhatsTooTall() {
-        val c = StreamPicker.chooseLive(listOf(hdr4k, av1, avc), emptyList(), maxHeight = 2160, hdrScreen = true) {
-            !it.codec.startsWith("av01") && !it.codec.startsWith("vp09")
+        val c = StreamPicker.chooseLive(listOf(sdr4k, av1, avc), emptyList(), maxHeight = 2160) {
+            !it.codec.startsWith("av01") && !it.codec.startsWith("vp9")
         }!!
         assertEquals("1080avc", c.video.ref)
-        assertEquals("1080avc", StreamPicker.chooseLive(listOf(hdr4k, avc), emptyList(), maxHeight = 1080, hdrScreen = true) { true }!!.video.ref)
-        assertNull(StreamPicker.chooseLive(listOf(hdr4k), emptyList(), maxHeight = 2160, hdrScreen = true) { false })
-    }
-
-    @Test fun liveTakesTallerSdrOverShorterHdr() {
-        val hdr1080 = v("1080hdr", 1080, codec = "vp09.02.40.10.01.09.16.09.00", mp4 = false)
-        assertEquals("2160sdr", StreamPicker.chooseLive(listOf(hdr1080, sdr4k), emptyList(), 2160, true) { true }!!.video.ref)
+        assertNull(c.audio)
+        assertEquals("1080avc", StreamPicker.chooseLive(listOf(sdr4k, avc), emptyList(), maxHeight = 1080) { true }!!.video.ref)
+        assertNull(StreamPicker.chooseLive(listOf(hdr4k), emptyList(), maxHeight = 2160) { true })
     }
 
     @Test fun codecDescriptions() {
@@ -162,13 +152,12 @@ class StreamPickerTest {
         assertFalse(StreamPicker.isHdr("vp9.0"))
         assertEquals("VP9 profile 2, 10-bit HDR", StreamPicker.describeCodec("vp9.2"))
         assertEquals("VP9 (SDR)", StreamPicker.describeCodec("vp9.0"))
-        // As offered on the TV: VP9 HDR and SDR at 2160p60; AV1 HDR, which the SHIELD can't decode.
+        // As offered on the TV: VP9 HDR and SDR at 2160p60; the SHIELD plays only the SDR one.
         val c = StreamPicker.chooseLive(listOf(
             v("315", 2160, fps = 60, codec = "vp9", mp4 = false),
             v("337", 2160, fps = 60, codec = "vp9.2", mp4 = false),
-            v("701", 2160, fps = 60, codec = "av01.0.13M.10.0.110.09.16.09.0"),
-        ), emptyList(), maxHeight = 2160, hdrScreen = true) { !it.codec.startsWith("av01") }!!
-        assertEquals("337", c.video.ref)
+        ), emptyList(), maxHeight = 2160) { true }!!
+        assertEquals("315", c.video.ref)
     }
 
     private fun webm(ref: String, h: Int, fps: Int = 30, kbps: Int = 1000, codec: String = "vp9") =
