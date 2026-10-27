@@ -72,6 +72,29 @@ object StreamPicker {
     }
 
     /**
+     * What a codec string says, for the log: "VP9 profile 2, 10-bit, PQ (HDR10)",
+     * "AV1 main, 10-bit, HLG", "VP9 (SDR)", "H.264 (SDR)".
+     */
+    fun describeCodec(codec: String): String {
+        val f = codec.trim().lowercase().split('.')
+        fun transfer(tc: String?) = when (tc) {
+            "16" -> "PQ (HDR10)"
+            "18" -> "HLG"
+            null -> null
+            else -> "SDR (transfer $tc)"
+        }
+        return when (f.firstOrNull()) {
+            "vp09" -> listOfNotNull("VP9 profile ${f.getOrNull(1)?.toIntOrNull() ?: "?"}",
+                f.getOrNull(3)?.toIntOrNull()?.let { "$it-bit" }, transfer(f.getOrNull(6))).joinToString(", ")
+            "vp9" -> "VP9 (SDR)"
+            "av01" -> listOfNotNull("AV1 " + when (f.getOrNull(1)) { "0" -> "main"; "1" -> "high"; "2" -> "professional"; else -> "?" },
+                f.getOrNull(3)?.toIntOrNull()?.let { "$it-bit" }, transfer(f.getOrNull(7))).joinToString(", ")
+            "avc1" -> "H.264 (SDR)"
+            else -> codec.ifBlank { "unknown codec" }
+        }
+    }
+
+    /**
      * Which streams to play live (not download): the tallest video-only stream up to [maxHeight]
      * that [canPlay] says this TV decodes in hardware, HDR over SDR at the same height when
      * [hdrScreen] (SDR over HDR otherwise, since the TV would show HDR washed out), then higher

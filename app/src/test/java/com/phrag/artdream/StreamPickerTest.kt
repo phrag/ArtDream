@@ -146,4 +146,13 @@ class StreamPickerTest {
         val hdr1080 = v("1080hdr", 1080, codec = "vp09.02.40.10.01.09.16.09.00", mp4 = false)
         assertEquals("2160sdr", StreamPicker.chooseLive(listOf(hdr1080, sdr4k), emptyList(), 2160, true) { true }!!.video.ref)
     }
+
+    @Test fun codecDescriptions() {
+        assertEquals("VP9 profile 2, 10-bit, PQ (HDR10)", StreamPicker.describeCodec("vp09.02.51.10.01.09.16.09.00"))
+        assertEquals("VP9 profile 0, 8-bit, SDR (transfer 01)", StreamPicker.describeCodec("vp09.00.51.08.01.01.01.01.00"))
+        assertEquals("AV1 main, 10-bit, HLG", StreamPicker.describeCodec("av01.0.13M.10.0.110.09.18.09.0"))
+        assertEquals("AV1 main, 8-bit", StreamPicker.describeCodec("av01.0.12M.08"))
+        assertEquals("VP9 (SDR)", StreamPicker.describeCodec("vp9"))
+        assertEquals("H.264 (SDR)", StreamPicker.describeCodec("avc1.640033"))
+    }
 }
