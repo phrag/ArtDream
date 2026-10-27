@@ -1,6 +1,8 @@
 package com.phrag.artdream
 
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +22,8 @@ import android.widget.TextView
  * Runs the same [Slideshow] as the screensaver in an ordinary full-screen
  * activity, since apps can't reliably start a DreamService themselves.
  * Like a real dream, almost any key exits; D-pad right skips to the next image.
+ *
+ * Started with [play], it plays one My media item on demand instead, until Back.
  */
 class PreviewActivity : Activity() {
 
@@ -27,6 +31,7 @@ class PreviewActivity : Activity() {
     private lateinit var hint: TextView
     private val prefs by lazy { Prefs(this) }
     private val cache by lazy { ArtCache(this) }
+    private val item by lazy { intent.getStringExtra(EXTRA_ITEM) }
 
     private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
@@ -35,9 +40,10 @@ class PreviewActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.BLACK))
 
-        slideshow = Slideshow(this)
+        slideshow = Slideshow(this, item)
         hint = TextView(this).apply {
-            text = "Preview · → next · ↑ favourite · ↓ never show again · any other button exits"
+            text = if (item != null) "Back returns to My media"
+                else "Preview · → next · ↑ favourite · ↓ never show again · any other button exits"
             setTextColor(Color.argb(220, 255, 255, 255))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setShadowLayer(8f, 0f, 2f, Color.BLACK)
@@ -91,6 +97,9 @@ class PreviewActivity : Activity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // Watching one item: Back leaves, the D-pad and OK do nothing (a stray press doesn't cut it
+        // off), and volume and other keys keep working.
+        if (item != null) return event.isDpadKey() || super.onKeyDown(keyCode, event)
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_RIGHT -> slideshow.next()
             KeyEvent.KEYCODE_DPAD_UP -> slideshow.currentArtwork?.let { art ->
@@ -107,7 +116,16 @@ class PreviewActivity : Activity() {
         return true
     }
 
-    private companion object {
-        const val HINT_MS = 3_000L
+    private fun KeyEvent.isDpadKey() = keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_CENTER ||
+        keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+    companion object {
+        private const val HINT_MS = 3_000L
+        private const val EXTRA_ITEM = "item"
+
+        /** Plays the My media item [key] full screen. */
+        fun play(ctx: Context, key: String) {
+            ctx.startActivity(Intent(ctx, PreviewActivity::class.java).putExtra(EXTRA_ITEM, key))
+        }
     }
 }

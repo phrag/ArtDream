@@ -105,4 +105,9 @@ class YouTubeTest {
         assertTrue("setPlaybackQuality(topLevel(p)||'highres')" in page)
         assertTrue("artdream:nudge:" in page)
     }
+
+    @Test fun playerPageStartsAtTheBeginningWhenPickedToWatch() {
+        assertTrue("jumped=false," in YouTube.playerHtml(id, sound = false))
+        assertTrue("jumped=true," in YouTube.playerHtml(id, sound = true, fromStart = true))
+    }
 }

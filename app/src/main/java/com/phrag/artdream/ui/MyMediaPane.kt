@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.phrag.artdream.OwnMedia
+import com.phrag.artdream.PreviewActivity
 import com.phrag.artdream.Prefs
 import com.phrag.artdream.R
 import com.phrag.artdream.UploadServer
@@ -20,7 +21,8 @@ import java.util.concurrent.Executors
 /**
  * "My media": the user's own pictures and videos. Shows how they mix with the museum art, the
  * address to open on a phone or computer to add files (the upload server only runs while this
- * screen is showing), and what's on the TV, where OK removes an item.
+ * screen is showing), and what's on the TV, where OK plays an item full screen and the Remove
+ * button beside it deletes it.
  */
 class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private val own: OwnMedia) {
 
@@ -47,6 +49,8 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
     private val token = UploadServer.newToken()   // stable while the app is open
     private var shown = false
     private var started = false
+    /** The item last played, so its row gets focus back when the list is rebuilt on return. */
+    private var playedKey: String? = null
 
     init {
         val col = Ui.column(ctx).apply {
@@ -181,9 +185,22 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
                 else -> "Picture · ${mb(item.bytes)}"
             }
             val row = SettingRow(ctx, item.label, sub)
-            row.setValue("Remove")
-            row.setOnClickListener { confirmRemove(item) }
-            listBox.addView(row)
+            row.setValue("Play")
+            row.setOnClickListener {
+                playedKey = item.key
+                PreviewActivity.play(ctx, item.key)
+            }
+            val remove = Ui.button(ctx, "Remove") { confirmRemove(item) }
+            val line = Ui.row(ctx).apply { clipChildren = false; clipToPadding = false }
+            line.addView(row, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                topMargin = ctx.dp(6)
+            })
+            line.addView(remove, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = ctx.dp(6)
+                marginStart = ctx.dp(12)
+            })
+            listBox.addView(line)
+            if (item.key == playedKey && row.requestFocus()) playedKey = null
         }
         adbView.text = "adb push <file> ${own.importDir?.path ?: "(no storage)"}/"
     }

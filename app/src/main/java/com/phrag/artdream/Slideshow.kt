@@ -65,8 +65,11 @@ import kotlin.random.Random
  * Everything must be called on the main thread. Lifecycle: [start] / [stop]
  * may alternate any number of times; [release] is final. After [stop] nothing
  * is shown, posted or animated until the next [start].
+ *
+ * With [only] (a My media item's key) it plays just that item, on demand: a video or YouTube
+ * link from the start and on repeat, a picture held, with sound and no night dimming.
  */
-class Slideshow(private val context: Context) {
+class Slideshow(private val context: Context, private val only: String? = null) {
 
     /**
      * One slide's decoded content: a picture ([image]) or a video ([video], played by [player]
@@ -149,6 +152,10 @@ class Slideshow(private val context: Context) {
     fun start() {
         if (running || released) return
         running = true
+        if (only != null) {
+            advance()
+            return
+        }
         // Top up the cache in the background (one refresh at a time) — unless only
         // the user's own media is wanted, which needs no downloads.
         if (prefs.ownMode != Prefs.OWN_ONLY && refreshing.compareAndSet(false, true)) {
@@ -207,10 +214,19 @@ class Slideshow(private val context: Context) {
 
     private fun advance() {
         if (!running) return
+        // Playing one item, nothing moves on by itself: an advance once it's up means it failed.
+        if (only != null && current != null) {
+            cantPlay()
+            return
+        }
         val gen = ++generation
         main.removeCallbacksAndMessages(null)
         if (queue.isEmpty()) queue.addAll(buildQueue())
         val next = takeNext()
+        if (next == null && only != null) {
+            cantPlay()
+            return
+        }
         if (next == null) {
             status.visibility = View.VISIBLE
             main.postDelayed(::advance, 5_000)
@@ -233,7 +249,9 @@ class Slideshow(private val context: Context) {
                     slide?.recycle()
                     return@post
                 }
-                if (slide == null && mine) {
+                if (slide == null && only != null) {
+                    cantPlay()
+                } else if (slide == null && mine) {
                     // Never delete the user's own file on a failed decode; skip it, and pause
                     // briefly so a playlist of nothing but bad files can't spin.
                     Log.w(TAG, "skipping unreadable ${next.image.name}")
@@ -247,6 +265,19 @@ class Slideshow(private val context: Context) {
             }
         }
     }
+
+    /** The one item asked for is gone or won't play: say so instead of retrying it forever. */
+    private fun cantPlay() {
+        generation++
+        main.removeCallbacksAndMessages(null)
+        current?.let(::discard)
+        current = null
+        status.text = "Couldn't play this. Press Back to return to My media."
+        status.visibility = View.VISIBLE
+    }
+
+    /** Sound on the user's own videos: always when one was picked to play, else the setting. */
+    private val sound get() = only != null || prefs.videoSound
 
     /**
      * One pass through the playlist. In Mixed mode the user's own items get a guaranteed share, one
@@ -363,7 +394,7 @@ class Slideshow(private val context: Context) {
 
         // Ken Burns: slow zoom + drift in a random direction across the whole interval.
         // (Videos already move, so they stay put.)
-        if (!isVideo && !isYouTube) {
+        if (!isVideo && !isYouTube && only == null) {
             val drift = context.resources.displayMetrics.widthPixels * 0.02f
             painting.animate()
                 .scaleX(1.06f).scaleY(1.06f)
@@ -373,7 +404,7 @@ class Slideshow(private val context: Context) {
                 .setDuration(intervalMs + FADE_MS)
         }
 
-        main.postDelayed(::advance, if (isVideo) videoShowMs(slide, intervalMs) else intervalMs)
+        if (only == null) main.postDelayed(::advance, if (isVideo) videoShowMs(slide, intervalMs) else intervalMs)
     }
 
     /**
@@ -400,8 +431,8 @@ class Slideshow(private val context: Context) {
                     slide.player = mp
                     mp.setSurface(surface)
                     mp.setDataSource(slide.video!!.path)
-                    mp.isLooping = slide.durationMs < intervalMs
-                    val vol = if (prefs.videoSound) 1f else 0f
+                    mp.isLooping = only != null || slide.durationMs < intervalMs
+                    val vol = if (sound) 1f else 0f
                     mp.setVolume(vol, vol)
                     mp.setOnPreparedListener { if (!slide.disposed) it.start() }
                     mp.setOnErrorListener { _, what, extra ->
@@ -464,7 +495,7 @@ class Slideshow(private val context: Context) {
         slide.web = web
         slide.releaseWeb = ::releaseWeb
         lastYouTubeLoadAt = System.currentTimeMillis()
-        web.loadDataWithBaseURL(YouTube.PLAYER_BASE_URL, YouTube.playerHtml(slide.youtubeId!!, prefs.videoSound, displayW, displayH), "text/html", "utf-8", null)
+        web.loadDataWithBaseURL(YouTube.PLAYER_BASE_URL, YouTube.playerHtml(slide.youtubeId!!, sound, displayW, displayH, fromStart = only != null), "text/html", "utf-8", null)
         main.postDelayed({
             if (!ready && !slide.disposed) {
                 Log.w(TAG, "youtube ${slide.youtubeId}: player never started")
@@ -523,12 +554,12 @@ class Slideshow(private val context: Context) {
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
         val sources = ProgressiveMediaSource.Factory(http)
         val video = sources.createMediaSource(MediaItem.fromUri(live.videoUrl))
-        val sound = prefs.videoSound && live.audioUrl != null
-        val source = if (sound) MergingMediaSource(video, sources.createMediaSource(MediaItem.fromUri(live.audioUrl!!))) else video
+        val withSound = sound && live.audioUrl != null
+        val source = if (withSound) MergingMediaSource(video, sources.createMediaSource(MediaItem.fromUri(live.audioUrl!!))) else video
         val exo = ExoPlayer.Builder(context).build()
         slide.exo = exo
         exo.setVideoSurfaceView(surface)
-        exo.volume = if (sound) 1f else 0f
+        exo.volume = if (withSound) 1f else 0f
         exo.repeatMode = Player.REPEAT_MODE_ONE
         exo.addListener(object : Player.Listener {
             @OptIn(UnstableApi::class)
@@ -548,7 +579,7 @@ class Slideshow(private val context: Context) {
         })
         exo.setMediaSource(source)
         // A slide shows a minute or so: start somewhere inside a long video, not always at 0:00.
-        if (live.durationMs > 240_000) exo.seekTo(Random.nextLong(live.durationMs - 150_000))
+        if (only == null && live.durationMs > 240_000) exo.seekTo(Random.nextLong(live.durationMs - 150_000))
         exo.playWhenReady = true
         exo.prepare()
         main.postDelayed({ if (!started) fallBack("never started") }, NATIVE_START_MS)
@@ -640,7 +671,7 @@ class Slideshow(private val context: Context) {
     }
 
     private fun isNight(): Boolean {
-        if (prefs.nightMode != Prefs.NIGHT_AUTO) return false
+        if (only != null || prefs.nightMode != Prefs.NIGHT_AUTO) return false
         val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         return h >= 21 || h < 7
     }
@@ -693,6 +724,7 @@ class Slideshow(private val context: Context) {
      * cached so a just-changed picker never leaves a blank screen.
      */
     private fun playlist(): List<ArtCache.Entry> {
+        if (only != null) return own.entries().filter { it.art.id == only }
         // A YouTube link that just failed (embedding off, video gone, no network) sits out a while,
         // so a playlist of one bad link doesn't keep reloading a web page.
         val now = System.currentTimeMillis()
