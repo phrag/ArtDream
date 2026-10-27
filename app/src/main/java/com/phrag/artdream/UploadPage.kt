@@ -38,7 +38,7 @@ small{color:var(--dim)}
 <h1>Add to fArtSaver</h1>
 <p>Pictures and videos you add here join the screensaver. They stay on the TV and nowhere else.</p>
 <div class="drop" id="drop" tabindex="0"><b>Drop files here, or choose them</b>
-<span style="color:var(--dim)">jpg, png, webp, gif &middot; mp4, mkv, webm, mov</span>
+<span style="color:var(--dim)">jpg, png, webp, heic, avif, gif &middot; mp4, mkv, webm, mov</span>
 <div class="row picks"><button id="pickmedia" type="button">Photos &amp; videos</button><button id="pickfiles" type="button" class="quiet">Browse files</button></div>
 </div>
 <input id="pick" type="file" multiple accept="image/*,video/*,.mkv,.webm,.mov,.mp4" hidden>

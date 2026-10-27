@@ -189,7 +189,7 @@ class UploadServer(
         val raw = req.query["name"].orEmpty()
         val name = OwnMedia.sanitizeName(raw)
             ?.takeIf { OwnMedia.kindOf(it) != OwnMedia.Kind.YOUTUBE }   // links go through the link box
-            ?: return fail(out, 415, raw, "Not a picture or video file (jpg, png, webp, gif, mp4, mkv, webm, mov)")
+            ?: return fail(out, 415, raw, "Not a picture or video file (jpg, png, webp, heic, avif, gif, mp4, mkv, webm, mov)")
         val len = req.contentLength
         if (len < 0) return fail(out, 411, name, "No file size sent")
         if (len == 0L) return fail(out, 400, name, "Empty file")

@@ -162,7 +162,7 @@ class OwnMedia(ctx: Context) {
         /** Per file. A 4K clip of several minutes fits; a feature film doesn't. Long: 2 GB is past Int. */
         const val MAX_FILE_BYTES = 2L * 1024 * 1024 * 1024
 
-        private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
+        private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif")
         private val VIDEO_EXT = setOf("mp4", "m4v", "mov", "mkv", "webm", "3gp", "ts")
 
         fun kindOf(name: String): Kind? = when (name.substringAfterLast('.', "").lowercase()) {
