@@ -155,4 +155,19 @@ class StreamPickerTest {
         assertEquals("VP9 (SDR)", StreamPicker.describeCodec("vp9"))
         assertEquals("H.264 (SDR)", StreamPicker.describeCodec("avc1.640033"))
     }
+
+    @Test fun youTubesShortVp9HdrLabelIsHdr() {
+        assertTrue(StreamPicker.isHdr("vp9.2"))
+        assertTrue(StreamPicker.isHdr("vp09.03.51.10.01.09.16.09.00"))
+        assertFalse(StreamPicker.isHdr("vp9.0"))
+        assertEquals("VP9 profile 2, 10-bit HDR", StreamPicker.describeCodec("vp9.2"))
+        assertEquals("VP9 (SDR)", StreamPicker.describeCodec("vp9.0"))
+        // As offered on the TV: VP9 HDR and SDR at 2160p60; AV1 HDR, which the SHIELD can't decode.
+        val c = StreamPicker.chooseLive(listOf(
+            v("315", 2160, fps = 60, codec = "vp9", mp4 = false),
+            v("337", 2160, fps = 60, codec = "vp9.2", mp4 = false),
+            v("701", 2160, fps = 60, codec = "av01.0.13M.10.0.110.09.16.09.0"),
+        ), emptyList(), maxHeight = 2160, hdrScreen = true) { !it.codec.startsWith("av01") }!!
+        assertEquals("337", c.video.ref)
+    }
 }
