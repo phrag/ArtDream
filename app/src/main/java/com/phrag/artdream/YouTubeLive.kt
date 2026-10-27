@@ -32,6 +32,10 @@ object YouTubeLive {
         val hdr: Boolean,
         val durationMs: Long,
         val summary: String,
+        /** What YouTube lists for the video stream (0 when it doesn't say), for the info overlay. */
+        val fps: Int = 0,
+        val bitrate: Int = 0,
+        val codec: String = "",
     )
 
     /**
@@ -62,7 +66,7 @@ object YouTubeLive {
                 " hdrScreen=$hdrScreen"
             Log.i(TAG, "youtube $id native, playing: $picked" + (a?.let { " + ${it.averageBitrate}k ${it.codec}" } ?: ""))
             Streams(v.content, a?.content, v.width, v.height, StreamPicker.isHdr(v.codec.orEmpty()),
-                info.duration.coerceAtLeast(0) * 1000, picked)
+                info.duration.coerceAtLeast(0) * 1000, picked, v.fps, v.bitrate, v.codec.orEmpty())
         }
     } catch (e: Exception) {
         Log.w(TAG, "youtube $id native: $e")
