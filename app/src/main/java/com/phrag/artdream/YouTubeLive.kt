@@ -58,7 +58,8 @@ object YouTubeLive {
         } else {
             val v = choice.video.ref as VideoStream
             val a = choice.audio?.ref as AudioStream?
-            val picked = summary(v)
+            val picked = summary(v) + " [" + StreamPicker.describeCodec(v.codec.orEmpty()) + "]" +
+                " hdrScreen=$hdrScreen"
             Log.i(TAG, "youtube $id native, playing: $picked" + (a?.let { " + ${it.averageBitrate}k ${it.codec}" } ?: ""))
             Streams(v.content, a?.content, v.width, v.height, StreamPicker.isHdr(v.codec.orEmpty()),
                 info.duration.coerceAtLeast(0) * 1000, picked)

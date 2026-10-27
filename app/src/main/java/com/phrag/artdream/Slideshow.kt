@@ -38,6 +38,8 @@ import android.widget.LinearLayout
 import android.widget.TextClock
 import android.widget.TextView
 import androidx.annotation.OptIn
+import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -529,8 +531,15 @@ class Slideshow(private val context: Context) {
         exo.volume = if (sound) 1f else 0f
         exo.repeatMode = Player.REPEAT_MODE_ONE
         exo.addListener(object : Player.Listener {
+            @OptIn(UnstableApi::class)
             override fun onRenderedFirstFrame() {
-                if (!started) Log.i(TAG, "youtube $id native: playing ${live.summary}")
+                if (!started) {
+                    Log.i(TAG, "youtube $id native: playing ${live.summary}")
+                    // What the decoder really got, and what the TV takes, to tell "no HDR stream" from "HDR lost on the way".
+                    val f = exo.videoFormat
+                    Log.i(TAG, "youtube $id native, decoder: ${f?.sampleMimeType} ${f?.codecs} ${f?.width}x${f?.height}" +
+                        " transfer=${transferName(f?.colorInfo?.colorTransfer)} screen HDR types=$hdrTypes")
+                }
                 started = true
             }
             override fun onPlayerError(error: PlaybackException) {
@@ -546,15 +555,27 @@ class Slideshow(private val context: Context) {
         return holder
     }
 
-    /** Whether the TV takes HDR (HDR10, HLG or Dolby Vision) at all; if not, SDR streams are picked. */
+    /** The HDR kinds the TV takes (1 Dolby Vision, 2 HDR10, 3 HLG, 4 HDR10+); empty for an SDR TV. */
     @Suppress("DEPRECATION")
-    private val hdrScreen by lazy {
+    private val hdrTypes: List<Int> by lazy {
         try {
             (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
-                .hdrCapabilities?.supportedHdrTypes?.isNotEmpty() == true
+                .hdrCapabilities?.supportedHdrTypes?.toList().orEmpty()
         } catch (e: Exception) {
-            false
+            emptyList()
         }
+    }
+
+    /** Whether the TV takes HDR at all; if not, SDR streams are picked. */
+    private val hdrScreen get() = hdrTypes.isNotEmpty()
+
+    @OptIn(UnstableApi::class)
+    private fun transferName(t: Int?) = when (t) {
+        C.COLOR_TRANSFER_ST2084 -> "PQ (HDR10)"
+        C.COLOR_TRANSFER_HLG -> "HLG"
+        C.COLOR_TRANSFER_SDR -> "SDR"
+        null, Format.NO_VALUE -> "not signalled"
+        else -> "$t"
     }
 
     /**

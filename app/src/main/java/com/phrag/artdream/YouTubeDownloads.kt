@@ -4,6 +4,7 @@ import android.util.Log
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
@@ -140,6 +141,9 @@ object YouTubeDownloads {
         if (initialised) return
         NewPipe.init(NewPipeDownloader(), Localization.DEFAULT)
         YouTubeLive.registerHdrItags()
+        // NewPipe asks only the Android (Shorts) and visionOS clients by default, and on the TV
+        // neither brought an HDR format; ask the iOS client too, since iPhones play HDR.
+        YoutubeStreamExtractor.setFetchIosClient(true)
         initialised = true
     }
 
