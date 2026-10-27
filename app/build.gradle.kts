@@ -22,7 +22,10 @@ android {
         applicationId = "com.phrag.artdream"
         minSdk = 26          // covers every Shield
         targetSdk = 34
-        versionCode = 1
+        // Commit time in minutes, so every build moves the version forward. TV
+        // launchers cache an app's banner and icon per version code; with a fixed
+        // code, updates kept showing the old artwork.
+        versionCode = (gitTime / 60).toInt().coerceAtLeast(1)
         versionName = "0.1.0"
 
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
