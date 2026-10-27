@@ -48,10 +48,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
-import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.phrag.artdream.source.ArtSource
@@ -107,10 +105,6 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         var webQuality: String? = null
         var decoderName: String? = null
         var nativeFailed: String? = null
-        /** What [exo] is playing now: [live], or its SDR fallback after a failed HDR experiment. */
-        var playing: YouTubeLive.Streams? = null
-        /** How the HDR experiment went ([YouTubeLive.Streams.experimental]), for the overlay. */
-        var hdrExperiment: String? = null
 
         fun recycle() {
             disposed = true
@@ -457,11 +451,10 @@ class Slideshow(private val context: Context, private val only: String? = null) 
     private fun infoLines(slide: Slide): List<String> {
         val out = ArrayList<String>()
         val exo = slide.exo
-        val live = slide.playing ?: slide.live
+        val live = slide.live
         when {
             exo != null && live != null -> {
                 out += "Native player (ExoPlayer)"
-                slide.hdrExperiment?.let { out += it }
                 val f = exo.videoFormat
                 if (f == null) {
                     out += "starting… ${live.summary}"
@@ -698,13 +691,11 @@ class Slideshow(private val context: Context, private val only: String? = null) 
 
     /**
      * A YouTube link played by Media3 from the stream URLs [YouTubeLive] found, on a SurfaceView:
-     * unlike the WebView or a TextureView, a SurfaceView hands the decoder's output straight to the
-     * display, so HDR streams show as HDR. (It doesn't fade with the slide the way the other views
-     * do.) No text track is loaded, so there are never captions. Starts somewhere inside a long
-     * video, loops a short one. If playback fails or never starts, the slide switches to the web
-     * player, and that video uses the web player for a while. An HDR experiment stream (see
-     * [YouTubeLive.Streams.experimental]) is forced onto a hardware decoder and, if it fails, the
-     * SDR stream is played natively instead.
+     * it plays at the screen's full resolution, where the WebView player is held to what YouTube
+     * picks for its size. (It doesn't fade with the slide the way the other views do.) No text
+     * track is loaded, so there are never captions. Starts somewhere inside a long video, loops a
+     * short one. If playback fails or never starts, the slide switches to the web player, and that
+     * video uses the web player for a while.
      */
     @OptIn(UnstableApi::class)
     private fun nativeYouTubeView(slide: Slide): View {
@@ -719,7 +710,6 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         holder.addView(surface, FrameLayout.LayoutParams((vw * fit).toInt(), (vh * fit).toInt(), Gravity.CENTER))
 
         var started = false
-        var attempt = 0
         fun fallBack(why: String) = main.post {
             if (slide.disposed || slide.exo == null) return@post
             Log.w(TAG, "youtube $id native: $why; using the web player")
@@ -731,78 +721,44 @@ class Slideshow(private val context: Context, private val only: String? = null) 
             holder.addView(youtubeView(slide), FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
 
-        lateinit var play: (YouTubeLive.Streams) -> Unit
-        // The HDR experiment failed: play the SDR stream natively instead, else go to the web player.
-        fun failed(streams: YouTubeLive.Streams, why: String) = main.post {
-            if (slide.disposed || slide.exo == null) return@post
-            val sdr = streams.sdr
-            if (!streams.experimental || sdr == null) {
-                fallBack(why)
-                return@post
+        val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+        val sources = ProgressiveMediaSource.Factory(http)
+        val video = sources.createMediaSource(MediaItem.fromUri(live.videoUrl))
+        val withSound = sound && live.audioUrl != null
+        val source = if (withSound) MergingMediaSource(video, sources.createMediaSource(MediaItem.fromUri(live.audioUrl!!))) else video
+        val exo = ExoPlayer.Builder(context).build()
+        slide.exo = exo
+        exo.setVideoSurfaceView(surface)
+        exo.volume = if (withSound) 1f else 0f
+        exo.repeatMode = Player.REPEAT_MODE_ONE
+        exo.addListener(object : Player.Listener {
+            @OptIn(UnstableApi::class)
+            override fun onRenderedFirstFrame() {
+                if (!started) {
+                    Log.i(TAG, "youtube $id native: playing ${live.summary}")
+                    val f = exo.videoFormat
+                    Log.i(TAG, "youtube $id native, decoder: ${slide.decoderName} ${f?.sampleMimeType} ${f?.codecs} ${f?.width}x${f?.height}")
+                }
+                started = true
             }
-            Log.w(TAG, "youtube $id native: HDR experiment failed on ${slide.decoderName ?: "the decoder"}: $why; playing SDR")
-            slide.hdrExperiment = "HDR experiment failed ($why), SDR fallback"
-            slide.exo?.release()
-            slide.exo = null
-            slide.decoderName = null
-            play(sdr)
-        }
-
-        play = { streams ->
-            val myAttempt = ++attempt
-            started = false
-            slide.playing = streams
-            if (streams.experimental) slide.hdrExperiment = "HDR experiment: decoder lists no VP9 Profile 2"
-            val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
-            val sources = ProgressiveMediaSource.Factory(http)
-            val video = sources.createMediaSource(MediaItem.fromUri(streams.videoUrl))
-            val withSound = sound && streams.audioUrl != null
-            val source = if (withSound) MergingMediaSource(video, sources.createMediaSource(MediaItem.fromUri(streams.audioUrl!!))) else video
-            // ExoPlayer ranks decoders by the profiles they list, so for the experiment it would pick
-            // the software VP9 decoder (which lists Profile 2): keep only hardware video decoders.
-            val renderers = DefaultRenderersFactory(context).setMediaCodecSelector { mime, secure, tunneling ->
-                val all = MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
-                if (streams.experimental && mime.startsWith("video/")) all.filter { it.hardwareAccelerated }.ifEmpty { all } else all
+            override fun onPlayerError(error: PlaybackException) {
+                fallBack("error ${error.errorCodeName} ${error.message}")
             }
-            val exo = ExoPlayer.Builder(context, renderers).build()
-            slide.exo = exo
-            exo.setVideoSurfaceView(surface)
-            exo.volume = if (withSound) 1f else 0f
-            exo.repeatMode = Player.REPEAT_MODE_ONE
-            exo.addListener(object : Player.Listener {
-                @OptIn(UnstableApi::class)
-                override fun onRenderedFirstFrame() {
-                    if (!started) {
-                        Log.i(TAG, "youtube $id native: playing ${streams.summary}")
-                        // What the decoder really got, and what the TV takes, to tell "no HDR stream" from "HDR lost on the way".
-                        val f = exo.videoFormat
-                        Log.i(TAG, "youtube $id native, decoder: ${slide.decoderName} ${f?.sampleMimeType} ${f?.codecs} ${f?.width}x${f?.height}" +
-                            " transfer=${transferName(f?.colorInfo?.colorTransfer)} screen HDR types=$hdrTypes" +
-                            if (streams.experimental) " (HDR experiment: playing)" else "")
-                        if (streams.experimental) slide.hdrExperiment = "HDR experiment: playing on a decoder that lists no VP9 Profile 2"
-                    }
-                    started = true
-                }
-                override fun onPlayerError(error: PlaybackException) {
-                    failed(streams, "error ${error.errorCodeName} ${error.message}")
-                }
-            })
-            exo.addAnalyticsListener(object : AnalyticsListener {
-                @OptIn(UnstableApi::class)
-                override fun onVideoDecoderInitialized(
-                    eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long,
-                ) {
-                    slide.decoderName = decoderName
-                }
-            })
-            exo.setMediaSource(source)
-            // A slide shows a minute or so: start somewhere inside a long video, not always at 0:00.
-            if (only == null && streams.durationMs > 240_000) exo.seekTo(Random.nextLong(streams.durationMs - 150_000))
-            exo.playWhenReady = true
-            exo.prepare()
-            main.postDelayed({ if (!started && attempt == myAttempt) failed(streams, "never started") }, NATIVE_START_MS)
-        }
-        play(live)
+        })
+        exo.addAnalyticsListener(object : AnalyticsListener {
+            @OptIn(UnstableApi::class)
+            override fun onVideoDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long,
+            ) {
+                slide.decoderName = decoderName
+            }
+        })
+        exo.setMediaSource(source)
+        // A slide shows a minute or so: start somewhere inside a long video, not always at 0:00.
+        if (only == null && live.durationMs > 240_000) exo.seekTo(Random.nextLong(live.durationMs - 150_000))
+        exo.playWhenReady = true
+        exo.prepare()
+        main.postDelayed({ if (!started) fallBack("never started") }, NATIVE_START_MS)
         return holder
     }
 
@@ -816,9 +772,6 @@ class Slideshow(private val context: Context, private val only: String? = null) 
             emptyList()
         }
     }
-
-    /** Whether the TV takes HDR at all; if not, SDR streams are picked. */
-    private val hdrScreen get() = hdrTypes.isNotEmpty()
 
     @OptIn(UnstableApi::class)
     private fun transferName(t: Int?) = when (t) {
@@ -861,7 +814,7 @@ class Slideshow(private val context: Context, private val only: String? = null) 
     private fun decodeYouTube(entry: ArtCache.Entry): Slide? {
         val id = OwnMedia.youtubeId(entry.image) ?: return null
         val nativeOk = (nativeBroken[id] ?: 0L) < System.currentTimeMillis()
-        val live = if (nativeOk) YouTubeLive.resolve(id, displayH, hdrScreen) else null
+        val live = if (nativeOk) YouTubeLive.resolve(id, displayH) else null
         return Slide(entry.art, null, Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888), youtubeId = id, live = live)
     }
 

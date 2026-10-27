@@ -135,23 +135,21 @@ object StreamPicker {
 
     /**
      * Which streams to play live (not download): the tallest video-only stream up to [maxHeight]
-     * that [canPlay] says this TV decodes in hardware, HDR over SDR at the same height when
-     * [hdrScreen] (SDR over HDR otherwise, since the TV would show HDR washed out), then higher
-     * frame rate, then bitrate. Any codec and container is fine here (no muxing), so VP9 and AV1
-     * count too: YouTube only has HDR and most 4K in those. Audio: highest bitrate, any codec.
+     * that [canPlay] says this TV decodes in hardware, never HDR (the SHIELD can't decode
+     * YouTube's), then higher frame rate, then bitrate. Any codec and container is fine here (no
+     * muxing), so VP9 and AV1 count too: YouTube has most 4K only in those. Audio: highest
+     * bitrate, any codec.
      */
     fun chooseLive(
         videoOnly: List<Video>,
         audio: List<Audio>,
         maxHeight: Int,
-        hdrScreen: Boolean,
         canPlay: (Video) -> Boolean,
     ): Choice? {
         val order = compareByDescending<Video> { it.height }
-            .thenByDescending { isHdr(it.codec) == hdrScreen }
             .thenByDescending { it.fps }
             .thenByDescending { it.bitrate }
-        val video = videoOnly.filter { it.progressive && it.height in 1..maxHeight && canPlay(it) }
+        val video = videoOnly.filter { it.progressive && it.height in 1..maxHeight && !isHdr(it.codec) && canPlay(it) }
             .sortedWith(order).firstOrNull() ?: return null
         return Choice(video, audio.filter { it.progressive }.maxByOrNull { it.bitrate })
     }
