@@ -22,6 +22,7 @@ import org.schabi.newpipe.extractor.stream.VideoStream
 object YouTubeLive {
 
     private const val TAG = "fArtSaver"
+    private const val TRYING = "trying anyway (experiment):"
 
     /** What to play: one video-only stream, plus an audio stream when there is one. */
     class Streams(
@@ -36,6 +37,12 @@ object YouTubeLive {
         val fps: Int = 0,
         val bitrate: Int = 0,
         val codec: String = "",
+        /**
+         * An HDR stream tried on a hardware decoder that doesn't list a 10-bit profile (the
+         * SHIELD's VP9 decoder lists only Profile 0); [sdr] is what to play if that fails.
+         */
+        val experimental: Boolean = false,
+        val sdr: Streams? = null,
     )
 
     /**
@@ -46,6 +53,7 @@ object YouTubeLive {
     fun resolve(id: String, screenH: Int, hdrScreen: Boolean): Streams? = try {
         YouTubeDownloads.init()
         val info = StreamInfo.getInfo(ServiceList.YouTube, YouTube.watchUrl(id))
+        val experimental = HashSet<VideoStream>()
         fun summary(s: VideoStream) = "${s.height}p${s.fps} ${s.codec}${if (StreamPicker.isHdr(s.codec.orEmpty())) " HDR" else ""}"
         Log.i(TAG, "youtube $id native, offered: " + info.videoOnlyStreams.joinToString { summary(it) })
         logDecoders("video/x-vnd.on2.vp9")
@@ -61,20 +69,35 @@ object YouTubeLive {
                 val (ok, why) = canDecode(it.codec, (it.ref as VideoStream).width, it.height, it.fps, hdr, hdrScreen)
                 if (hdr) Log.i(TAG, "youtube $id native, HDR candidate ${it.height}p${it.fps} ${it.codec}: " +
                     (if (ok) "accepted, " else "rejected, ") + why)
+                if (ok && why.startsWith(TRYING)) experimental += it.ref as VideoStream
                 ok
             },
         )
-        if (choice == null) {
-            Log.w(TAG, "youtube $id native: nothing offered decodes here")
-            null
-        } else {
+        fun streams(choice: StreamPicker.Choice, sdr: Streams?, label: String): Streams {
             val v = choice.video.ref as VideoStream
             val a = choice.audio?.ref as AudioStream?
             val picked = summary(v) + " [" + StreamPicker.describeCodec(v.codec.orEmpty()) + "]" +
-                " hdrScreen=$hdrScreen"
-            Log.i(TAG, "youtube $id native, playing: $picked" + (a?.let { " + ${it.averageBitrate}k ${it.codec}" } ?: ""))
-            Streams(v.content, a?.content, v.width, v.height, StreamPicker.isHdr(v.codec.orEmpty()),
-                info.duration.coerceAtLeast(0) * 1000, picked, v.fps, v.bitrate, v.codec.orEmpty())
+                " hdrScreen=$hdrScreen" + if (v in experimental) " (HDR on a decoder that doesn't list it: experiment)" else ""
+            Log.i(TAG, "youtube $id native, $label: $picked" + (a?.let { " + ${it.averageBitrate}k ${it.codec}" } ?: ""))
+            return Streams(v.content, a?.content, v.width, v.height, StreamPicker.isHdr(v.codec.orEmpty()),
+                info.duration.coerceAtLeast(0) * 1000, picked, v.fps, v.bitrate, v.codec.orEmpty(),
+                experimental = v in experimental, sdr = sdr)
+        }
+        if (choice == null) {
+            Log.w(TAG, "youtube $id native: nothing offered decodes here")
+            null
+        } else if ((choice.video.ref as VideoStream) in experimental) {
+            // The fallback if the experiment fails: the best SDR stream the decoders do list.
+            val sdrChoice = StreamPicker.chooseLive(
+                videoOnly = info.videoOnlyStreams.map(::describe).filter { !StreamPicker.isHdr(it.codec) },
+                audio = info.audioStreams.map(::describe),
+                maxHeight = maxHeight,
+                hdrScreen = false,
+                canPlay = { canDecode(it.codec, (it.ref as VideoStream).width, it.height, it.fps, false, hdrScreen).first },
+            )
+            streams(choice, sdrChoice?.let { streams(it, null, "SDR fallback") }, "playing")
+        } else {
+            streams(choice, null, "playing")
         }
     } catch (e: Exception) {
         Log.w(TAG, "youtube $id native: $e")
@@ -108,6 +131,10 @@ object YouTubeLive {
      * (VP9Profile2HDR, AV1ProfileMain10HDR10, …) or, on an HDR screen, the plain 10-bit profile
      * (VP9 Profile 2/3, AV1 Main 10). The SHIELD's VP9 decoder lists only plain Profile 2, yet
      * HDR10 metadata travels in the stream itself and reaches the display either way.
+     *
+     * Experiment: on the TV the SHIELD's hardware VP9 decoder listed only Profile 0, so on an HDR
+     * screen a VP9 HDR stream is still accepted when a hardware VP9 decoder takes its size and
+     * rate (reason starting with [TRYING]); the player falls back to SDR if it fails.
      */
     private fun canDecode(codec: String, width: Int, height: Int, fps: Int, hdr: Boolean, hdrScreen: Boolean): Pair<Boolean, String> {
         val c = codec.lowercase()
@@ -146,6 +173,8 @@ object YouTubeLive {
             when {
                 profiles.any { it in hdrProfiles } -> return true to "${info.name} lists an HDR profile"
                 hdrScreen && profiles.any { it in tenBitProfiles } -> return true to "${info.name} lists the 10-bit profile (HDR screen)"
+                hdrScreen && mime == "video/x-vnd.on2.vp9" ->
+                    return true to "$TRYING ${info.name} lists no 10-bit profile (profiles ${profiles.sorted().joinToString(",") { "0x" + it.toString(16) }})"
                 else -> why += "${info.name}: no 10-bit/HDR profile (profiles ${profiles.sorted().joinToString(",") { "0x" + it.toString(16) }}, hdrScreen=$hdrScreen)"
             }
         }
