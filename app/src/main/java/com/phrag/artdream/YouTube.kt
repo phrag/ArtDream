@@ -96,15 +96,16 @@ object YouTube {
      * starts and every 5 s after while it plays something lower (YouTube ignores the request
      * until the video's levels are known, and its own picker can settle lower).
      * Captions are off: YouTube switches them on by itself for a muted video, so the captions
-     * module is unloaded each time playback starts.
+     * module is unloaded each time playback starts. A long video starts somewhere in the middle
+     * unless [fromStart] (the user picked it to watch).
      */
-    fun playerHtml(id: String, sound: Boolean, screenW: Int = 0, screenH: Int = 0): String = """<!doctype html><html><head>
+    fun playerHtml(id: String, sound: Boolean, screenW: Int = 0, screenH: Int = 0, fromStart: Boolean = false): String = """<!doctype html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}
 #box{position:absolute;left:0;top:0;transform-origin:0 0}#p{width:100%;height:100%}</style></head><body>
 <div id="box"><div id="p"></div></div>
 <script>
-var box=document.getElementById('box'),player,apiReady=false,jumped=false,levels='',waited=0,nudges=0;
+var box=document.getElementById('box'),player,apiReady=false,jumped=$fromStart,levels='',waited=0,nudges=0;
 var SW=${screenW.coerceAtLeast(0)},SH=${screenH.coerceAtLeast(0)};
 // The top level YouTube lists for this video ('' until it knows them), else a generic "highest".
 function topLevel(p){try{var l=p.getAvailableQualityLevels()||[],j=l.join(',');
