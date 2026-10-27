@@ -99,12 +99,13 @@ object YouTubeLive {
         val c = codec.lowercase()
         val mime = when {
             c.startsWith("avc1") -> "video/avc"
-            c.startsWith("vp09") || c == "vp9" -> "video/x-vnd.on2.vp9"
+            c.startsWith("vp09") || c == "vp9" || c.startsWith("vp9.") -> "video/x-vnd.on2.vp9"
             c.startsWith("av01") -> "video/av01"
             else -> return false
         }
         val hdrProfiles = when (mime) {
-            "video/x-vnd.on2.vp9" -> setOf(CodecProfileLevel.VP9Profile2HDR, CodecProfileLevel.VP9Profile2HDR10Plus)
+            "video/x-vnd.on2.vp9" -> setOf(CodecProfileLevel.VP9Profile2HDR, CodecProfileLevel.VP9Profile2HDR10Plus,
+                CodecProfileLevel.VP9Profile3HDR, CodecProfileLevel.VP9Profile3HDR10Plus)
             "video/av01" -> setOf(CodecProfileLevel.AV1ProfileMain10HDR10, CodecProfileLevel.AV1ProfileMain10HDR10Plus)
             else -> emptySet()
         }
