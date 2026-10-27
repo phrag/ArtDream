@@ -10,6 +10,8 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.PorterDuff
 import android.graphics.SurfaceTexture
 import android.graphics.Typeface
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Handler
@@ -46,6 +48,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.phrag.artdream.source.ArtSource
@@ -86,6 +89,8 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         /** Set for a YouTube link: shown live, by [exo] when [live] was found, else in [web]. */
         val youtubeId: String? = null,
         val live: YouTubeLive.Streams? = null,
+        /** What an own video file's container says about its picture, for the info overlay. */
+        val file: FileVideo? = null,
     ) {
         var player: MediaPlayer? = null
         var exo: ExoPlayer? = null
@@ -94,6 +99,11 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         /** Hands [web] back to the slideshow's pool (WebViews are reused, not destroyed per slide). */
         var releaseWeb: ((WebView) -> Unit)? = null
         var disposed = false
+        /** The video info overlay, when it's switched on; [webQuality] etc. feed it. */
+        var info: TextView? = null
+        var webQuality: String? = null
+        var decoderName: String? = null
+        var nativeFailed: String? = null
 
         fun recycle() {
             disposed = true
@@ -110,6 +120,8 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         }
     }
 
+    /** An own video's track format (unknown values null), read once on the loader thread. */
+    private class FileVideo(val mime: String?, val profile: Int?, val fps: Float, val transfer: Int?, val bitrate: Long, val averaged: Boolean)
 
     private val main = Handler(Looper.getMainLooper())
     private val loader: ExecutorService = Executors.newSingleThreadExecutor()   // decodes the next slide
@@ -378,6 +390,10 @@ class Slideshow(private val context: Context, private val only: String? = null) 
             val needsCredit = slide.art.license.startsWith("CC BY")
             if (prefs.showCaption || needsCredit) addView(caption(slide.art, full = prefs.showCaption),
                 FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))
+            if ((isVideo || isYouTube) && prefs.videoInfo) addView(infoOverlay().also { slide.info = it },
+                FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
+                    setMargins(dp(48), dp(48), dp(48), dp(48))
+                })
         }
         root.addView(slideView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
 
@@ -405,6 +421,77 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         }
 
         if (only == null) main.postDelayed(::advance, if (isVideo) videoShowMs(slide, intervalMs) else intervalMs)
+        tickInfo(slide)
+    }
+
+    /** The video info box: small monospace text on a dark plate, top left (the clock is top right). */
+    private fun infoOverlay() = TextView(context).apply {
+        typeface = Typeface.MONOSPACE
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        setTextColor(Color.argb(230, 255, 255, 255))
+        setBackgroundColor(Color.argb(150, 0, 0, 0))
+        setPadding(dp(12), dp(8), dp(12), dp(8))
+    }
+
+    /** Refreshes a slide's info overlay now and every [INFO_TICK_MS] while it's shown (dropped frames move). */
+    private fun tickInfo(slide: Slide) {
+        val view = slide.info ?: return
+        if (slide.disposed) return
+        view.text = infoLines(slide).joinToString("\n")
+        main.postDelayed({ tickInfo(slide) }, INFO_TICK_MS)
+    }
+
+    /**
+     * What the overlay says. The native player's values are the format the decoder was handed
+     * (so "HDR10" means the decoder really got a PQ stream); an own file's come from its
+     * container, and it plays on a TextureView, which shows HDR as SDR.
+     */
+    @OptIn(UnstableApi::class)
+    private fun infoLines(slide: Slide): List<String> {
+        val out = ArrayList<String>()
+        val exo = slide.exo
+        val live = slide.live
+        when {
+            exo != null && live != null -> {
+                out += "Native player (ExoPlayer)"
+                val f = exo.videoFormat
+                if (f == null) {
+                    out += "starting… ${live.summary}"
+                } else {
+                    out += VideoInfo.picture(f.width, f.height, if (f.frameRate > 0f) f.frameRate else live.fps.toFloat())
+                    out += VideoInfo.codecName(f.sampleMimeType, f.codecs ?: live.codec)
+                    out += "HDR: " + VideoInfo.hdrName(f.colorInfo?.colorTransfer, f.sampleMimeType, f.codecs ?: live.codec)
+                    val bps = listOf(f.averageBitrate, f.bitrate, live.bitrate).firstOrNull { it > 0 } ?: 0
+                    VideoInfo.bitrate(bps.toLong())?.let { out += it }
+                }
+                val dropped = exo.videoDecoderCounters?.let { it.ensureUpdated(); it.droppedBufferCount }
+                out += listOfNotNull(slide.decoderName, dropped?.let { "dropped $it" }).joinToString(" · ").ifEmpty { "decoder starting…" }
+            }
+            slide.web != null -> {
+                out += "YouTube web player" + if (slide.nativeFailed != null) " (fallback)" else ""
+                slide.nativeFailed?.let { out += "native: $it" }
+                out += "quality " + (slide.webQuality ?: "starting…")
+                out += "HDR: none (the web player is SDR only)"
+            }
+            slide.video != null -> {
+                val v = slide.file
+                out += "Own file (MediaPlayer)"
+                out += VideoInfo.picture(slide.videoW, slide.videoH, v?.fps ?: 0f)
+                out += VideoInfo.codecName(v?.mime, null, v?.profile)
+                val hdr = VideoInfo.hdrName(v?.transfer, v?.mime, null)
+                out += "HDR: " + if (hdr.startsWith("SDR")) hdr else "$hdr in file, shown as SDR"
+                VideoInfo.bitrate(v?.bitrate ?: 0)?.let { out += if (v?.averaged == true) "$it (average)" else it }
+                val metrics = runCatching { slide.player?.metrics }.getOrNull()
+                val codec = metrics?.getString(MediaPlayer.MetricsConstants.CODEC_VIDEO)
+                val dropped = metrics?.takeIf { it.containsKey(MediaPlayer.MetricsConstants.FRAMES_DROPPED) }
+                    ?.getInt(MediaPlayer.MetricsConstants.FRAMES_DROPPED)
+                listOfNotNull(codec, dropped?.let { "dropped $it" }).joinToString(" · ").takeIf { it.isNotEmpty() }?.let { out += it }
+            }
+            else -> out += "starting…"
+        }
+        val mode = displayMode
+        out += VideoInfo.screen(displayW, displayH, mode?.refreshRate ?: 0f, hdrTypes)
+        return out
     }
 
     /**
@@ -486,6 +573,7 @@ class Slideshow(private val context: Context, private val only: String? = null) 
                     if (msg.startsWith("artdream:")) {
                         Log.i(TAG, "youtube ${slide.youtubeId}: ${msg.removePrefix("artdream:")}")
                         if (msg == "artdream:ready") ready = true
+                        if (msg.startsWith("artdream:quality:")) slide.webQuality = msg.removePrefix("artdream:quality:")
                         if (msg.startsWith("artdream:error:")) main.postDelayed({ skip() }, 1_500)
                     }
                     return true
@@ -544,6 +632,7 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         fun fallBack(why: String) = main.post {
             if (slide.disposed || slide.exo == null) return@post
             Log.w(TAG, "youtube $id native: $why; using the web player")
+            slide.nativeFailed = why
             nativeBroken[id] = System.currentTimeMillis() + BROKEN_LINK_MS
             slide.exo?.release()
             slide.exo = null
@@ -575,6 +664,14 @@ class Slideshow(private val context: Context, private val only: String? = null) 
             }
             override fun onPlayerError(error: PlaybackException) {
                 fallBack("error ${error.errorCodeName} ${error.message}")
+            }
+        })
+        exo.addAnalyticsListener(object : AnalyticsListener {
+            @OptIn(UnstableApi::class)
+            override fun onVideoDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long,
+            ) {
+                slide.decoderName = decoderName
             }
         })
         exo.setMediaSource(source)
@@ -664,9 +761,32 @@ class Slideshow(private val context: Context, private val only: String? = null) 
             } else {
                 Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888)   // black
             }
-            return Slide(entry.art, null, backdrop, entry.image, w, h, durationMs)
+            return Slide(entry.art, null, backdrop, entry.image, w, h, durationMs,
+                file = if (prefs.videoInfo) fileVideo(entry.image, durationMs) else null)
         } finally {
             runCatching { r.release() }
+        }
+    }
+
+    /** The first video track's format, for the info overlay; null if the file can't be read that way. */
+    private fun fileVideo(file: File, durationMs: Long): FileVideo? {
+        val x = MediaExtractor()
+        return try {
+            x.setDataSource(file.path)
+            val f = (0 until x.trackCount).map { x.getTrackFormat(it) }
+                .firstOrNull { it.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true } ?: return null
+            fun int(key: String) = if (f.containsKey(key)) runCatching { f.getInteger(key) }.getOrNull() else null
+            // The frame rate is stored as an int or a float, depending on the extractor.
+            val fps = if (!f.containsKey(MediaFormat.KEY_FRAME_RATE)) 0f else
+                runCatching { f.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat() }.recoverCatching { f.getFloat(MediaFormat.KEY_FRAME_RATE) }.getOrDefault(0f)
+            val declared = int(MediaFormat.KEY_BIT_RATE)?.toLong() ?: 0L
+            FileVideo(f.getString(MediaFormat.KEY_MIME), int(MediaFormat.KEY_PROFILE), fps, int(MediaFormat.KEY_COLOR_TRANSFER),
+                if (declared > 0) declared else file.length() * 8_000 / durationMs.coerceAtLeast(1), averaged = declared <= 0)
+        } catch (e: Exception) {
+            Log.w(TAG, "video info ${file.name}: $e")
+            null
+        } finally {
+            runCatching { x.release() }
         }
     }
 
@@ -803,6 +923,8 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         const val YOUTUBE_GAP_MS = 35_000L
         /** How long a failed YouTube link is left out of the playlist. */
         const val BROKEN_LINK_MS = 15 * 60_000L
+        /** How often the video info overlay is refreshed. */
+        const val INFO_TICK_MS = 2_000L
         /** Warm dim veil over videos at night (the bitmap [NIGHT_FILTER] can't apply to them). */
         val NIGHT_VEIL = Color.argb(90, 40, 15, 0)
         /** Dim to ~75% and shift toward warm (less blue, a little less green). */

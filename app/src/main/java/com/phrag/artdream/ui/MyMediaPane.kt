@@ -35,6 +35,10 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
     private val soundRow = SettingRow.toggle(ctx, "Sound on videos", "Off keeps the screensaver quiet", prefs.videoSound) {
         prefs.videoSound = it
     }
+    private val infoRow = SettingRow.toggle(ctx, "Video info overlay",
+        "Shows resolution, frame rate, codec, HDR and bitrate in a corner while a video plays", prefs.videoInfo) {
+        prefs.videoInfo = it
+    }
     private val addressView = Ui.text(ctx, "", Ui.HEADER_SP).apply {
         typeface = Typeface.MONOSPACE
         setPadding(0, ctx.dp(6), 0, ctx.dp(6))
@@ -72,6 +76,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         }
         col.addView(modeRow)
         col.addView(soundRow)
+        col.addView(infoRow)
 
         col.addView(Ui.groupLabel(ctx, "Add from your phone or computer"))
         // Address and instructions on the left, a QR code of the same address on the right.

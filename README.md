@@ -75,7 +75,11 @@ and only you remove it. Up to 3 GB in total (2 GB per file), and it never fills 
 "Show my media" is *Mixed* (one of yours after every three art slides, so a single upload still
 turns up within a few minutes), *Only mine* (nothing is downloaded; art is used if you
 have none) or *Off*. Videos play muted unless you turn on *Sound on videos*, loop if shorter than
-the slide time, and are cut after 5 minutes.
+the slide time, and are cut after 5 minutes. *Video info overlay* (off by default) puts a small
+box in the top-left corner of every video and YouTube link: resolution, frame rate, codec and
+profile, HDR type (HDR10, HLG, Dolby Vision or SDR, as the decoder received it), bitrate, which
+player is showing it (the native player, the YouTube web player fallback, or MediaPlayer for your
+own files), the decoder, dropped frames and the TV's mode.
 
 Three ways to add things:
 

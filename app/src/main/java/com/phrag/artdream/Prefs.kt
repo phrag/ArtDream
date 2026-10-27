@@ -92,6 +92,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("video_sound", false)
         set(v) = sp.edit().putBoolean("video_sound", v).apply()
 
+    /** A small corner overlay on videos saying what plays: size, frame rate, codec, HDR, bitrate, player. */
+    var videoInfo: Boolean
+        get() = sp.getBoolean("video_info", false)
+        set(v) = sp.edit().putBoolean("video_info", v).apply()
+
     fun isSourceOn(id: String): Boolean = sp.getBoolean("src_$id", true)
     fun setSourceOn(id: String, on: Boolean) = sp.edit().putBoolean("src_$id", on).apply()
 
