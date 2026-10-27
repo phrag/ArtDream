@@ -57,15 +57,17 @@ object StreamPicker {
     }
 
     /**
-     * True for a stream YouTube marks HDR in its codec string: VP9 profile 2 (10-bit) or 10-bit AV1
-     * with the PQ or HLG transfer (or without colour fields, which YouTube only omits for SDR).
-     * "vp09.02.51.10.01.09.16.09.00" and "av01.0.12M.10.0.110.09.16.09.0" are HDR10;
+     * True for a stream YouTube marks HDR in its codec string: VP9 profile 2 or 3 (10-bit) or
+     * 10-bit AV1 with the PQ or HLG transfer (or without colour fields, which YouTube only omits
+     * for SDR). YouTube labels its VP9 HDR streams with the short form "vp9.2" (seen on the TV);
+     * "vp09.02.51.10.01.09.16.09.00" is the long form. "av01.0.12M.10.0.110.09.16.09.0" is HDR10;
      * "vp9", "vp09.00.51.08…" and "av01.0.08M.08" are not.
      */
     fun isHdr(codec: String): Boolean {
         val f = codec.trim().lowercase().split('.')
         return when (f.firstOrNull()) {
-            "vp09" -> f.getOrNull(1) == "02"
+            "vp09" -> f.getOrNull(1) == "02" || f.getOrNull(1) == "03"
+            "vp9" -> f.getOrNull(1) == "2" || f.getOrNull(1) == "3"
             "av01" -> f.getOrNull(3) == "10" && (f.size <= 7 || f[7] == "16" || f[7] == "18")
             else -> false
         }
@@ -86,7 +88,10 @@ object StreamPicker {
         return when (f.firstOrNull()) {
             "vp09" -> listOfNotNull("VP9 profile ${f.getOrNull(1)?.toIntOrNull() ?: "?"}",
                 f.getOrNull(3)?.toIntOrNull()?.let { "$it-bit" }, transfer(f.getOrNull(6))).joinToString(", ")
-            "vp9" -> "VP9 (SDR)"
+            "vp9" -> when (f.getOrNull(1)) {
+                null, "0" -> "VP9 (SDR)"
+                else -> "VP9 profile ${f[1]}" + if (isHdr(codec)) ", 10-bit HDR" else ""
+            }
             "av01" -> listOfNotNull("AV1 " + when (f.getOrNull(1)) { "0" -> "main"; "1" -> "high"; "2" -> "professional"; else -> "?" },
                 f.getOrNull(3)?.toIntOrNull()?.let { "$it-bit" }, transfer(f.getOrNull(7))).joinToString(", ")
             "avc1" -> "H.264 (SDR)"
