@@ -78,8 +78,14 @@ have none) or *Off*. Videos play muted unless you turn on *Sound on videos*, loo
 the slide time, and are cut after 5 minutes. *Video info overlay* (off by default) puts a small
 box in the top-left corner of every video and YouTube link: resolution, frame rate, codec and
 profile, HDR type (HDR10, HLG, Dolby Vision or SDR, as the decoder received it), bitrate, which
-player is showing it (the native player, the YouTube web player fallback, or MediaPlayer for your
-own files), the decoder, dropped frames and the TV's mode.
+player is showing it (the native player, the YouTube web player fallback, or the MediaPlayer
+fallback for your own files), the decoder, dropped frames and the TV's mode.
+
+Your own videos play in Media3's ExoPlayer on a SurfaceView, which hands the decoder's picture
+straight to the TV, so an HDR10, HLG or Dolby Vision file (HEVC Main 10 or Dolby Vision on the
+SHIELD) is shown as HDR and the TV switches to its HDR mode. A file ExoPlayer can't play falls back
+to Android's MediaPlayer, which shows HDR as SDR. Logcat has one line per file with what the
+decoder got: `video <file> native, decoder: … transfer=PQ (HDR10) …`.
 
 Three ways to add things:
 
@@ -105,9 +111,12 @@ Three ways to add things:
   embedded player, which is SDR only, may show ads, and needs the video to allow embedding; one that
   fails there too is skipped and left out for 15 minutes. On the test TV a YouTube page loaded within ~30 s of another sat
   idle for about 30 s before it started, so a non-YouTube slide is preferred right after one.
-- **Save to TV** downloads the video (best H.264 stream up to 1080p, plus AAC audio, joined
-  without re-encoding) so it plays offline like any other video. Some older videos only offer
-  H.264 up to 720p; their 1080p is VP9, which isn't used. This uses
+- **Save to TV** downloads the video so it plays offline like any other video: the tallest SDR
+  stream up to the screen's resolution that the TV decodes in hardware, joined to its audio
+  without re-encoding. YouTube's H.264 stops at 1080p, so on a 4K TV that is usually 4K VP9 with
+  Opus, saved as WebM; at the same height H.264 with AAC (MP4) is preferred. If VP9 can't be
+  joined or is too big, the best H.264 stream up to 1080p is saved instead. YouTube's HDR (VP9
+  Profile 2, AV1) isn't saved, since the SHIELD can't decode it; SDR 4K is the ceiling there. This uses
   [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0, pinned to a
   release tag, with checksums in `gradle/verification-metadata.xml` because JitPack builds from
   tags). YouTube changes break such libraries from time to time; if saving starts failing,

@@ -19,6 +19,7 @@ object StreamPicker {
         val mp4: Boolean,
         val progressive: Boolean,
         val hasAudio: Boolean,
+        val webm: Boolean = false,
     )
 
     class Audio(
@@ -27,9 +28,13 @@ object StreamPicker {
         val codec: String,
         val m4a: Boolean,
         val progressive: Boolean,
+        val webm: Boolean = false,
     )
 
-    class Choice(val video: Video, val audio: Audio?)
+    class Choice(val video: Video, val audio: Audio?) {
+        /** Joined into WebM (VP9 + Opus) rather than MP4 (H.264 + AAC). */
+        val webm: Boolean get() = video.webm
+    }
 
     private fun Video.usable(maxHeight: Int) =
         mp4 && progressive && codec.startsWith("avc1", ignoreCase = true) && height in 1..maxHeight
@@ -55,6 +60,35 @@ object StreamPicker {
         // Picture only is still a fine screensaver (it plays muted by default).
         return bestVideo?.let { Choice(it, null) }
     }
+
+    /**
+     * What "Save to TV" fetches: the tallest SDR stream up to [maxHeight] that [canPlay] says this
+     * TV decodes in hardware, with an audio stream MediaMuxer can join to it: H.264 MP4 with AAC
+     * M4A, or VP9 WebM with Opus WebM. YouTube offers H.264 only up to 1080p, so on a 4K TV this
+     * is usually VP9. At the same height H.264 beats VP9 (every player takes it), 30 fps beats 60
+     * (half the size), then bitrate. HDR streams are left out: the SHIELD can't decode YouTube's
+     * (VP9 Profile 2, AV1). Null when no such pair is offered; [choose] is the fallback then.
+     */
+    fun chooseSave(videoOnly: List<Video>, audio: List<Audio>, maxHeight: Int, canPlay: (Video) -> Boolean): Choice? {
+        val aac = audio.filter { it.usable() }.maxByOrNull { it.bitrate }
+        val opus = audio.filter { it.webm && it.progressive && it.codec.equals("opus", ignoreCase = true) }.maxByOrNull { it.bitrate }
+        fun audioFor(v: Video): Audio? = when {
+            v.mp4 && v.codec.startsWith("avc1", ignoreCase = true) -> aac
+            v.webm && isVp9(v.codec) -> opus
+            else -> null
+        }
+        val order = compareByDescending<Video> { it.height }
+            .thenByDescending { it.fps <= 30 }
+            .thenByDescending { if (it.fps <= 30) it.fps else -it.fps }
+            .thenByDescending { it.mp4 }
+            .thenByDescending { it.bitrate }
+        val video = videoOnly
+            .filter { it.progressive && it.height in 1..maxHeight && !isHdr(it.codec) && audioFor(it) != null && canPlay(it) }
+            .sortedWith(order).firstOrNull() ?: return null
+        return Choice(video, audioFor(video))
+    }
+
+    private fun isVp9(codec: String) = codec.lowercase().let { it == "vp9" || it.startsWith("vp9.") || it.startsWith("vp09") }
 
     /**
      * True for a stream YouTube marks HDR in its codec string: VP9 profile 2 or 3 (10-bit) or

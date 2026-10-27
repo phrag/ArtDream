@@ -136,7 +136,7 @@ object YouTubeLive {
      * screen a VP9 HDR stream is still accepted when a hardware VP9 decoder takes its size and
      * rate (reason starting with [TRYING]); the player falls back to SDR if it fails.
      */
-    private fun canDecode(codec: String, width: Int, height: Int, fps: Int, hdr: Boolean, hdrScreen: Boolean): Pair<Boolean, String> {
+    fun canDecode(codec: String, width: Int, height: Int, fps: Int, hdr: Boolean, hdrScreen: Boolean): Pair<Boolean, String> {
         val c = codec.lowercase()
         val mime = when {
             c.startsWith("avc1") -> "video/avc"

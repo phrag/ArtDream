@@ -170,4 +170,51 @@ class StreamPickerTest {
         ), emptyList(), maxHeight = 2160, hdrScreen = true) { !it.codec.startsWith("av01") }!!
         assertEquals("337", c.video.ref)
     }
+
+    private fun webm(ref: String, h: Int, fps: Int = 30, kbps: Int = 1000, codec: String = "vp9") =
+        StreamPicker.Video(ref, h, fps, kbps * 1000, codec, mp4 = false, progressive = true, hasAudio = false, webm = true)
+
+    private fun opus(ref: String, kbps: Int) = StreamPicker.Audio(ref, kbps * 1000, "opus", m4a = false, progressive = true, webm = true)
+
+    @Test fun saveTakes4kVp9WithOpusOverH264At1080() {
+        val c = StreamPicker.chooseSave(
+            videoOnly = listOf(v("1080avc", 1080), webm("2160vp9", 2160), webm("1080vp9", 1080)),
+            audio = listOf(a("aac", 128), opus("opus", 160)),
+            maxHeight = 2160,
+        ) { true }!!
+        assertEquals("2160vp9", c.video.ref)
+        assertEquals("opus", c.audio!!.ref)
+        assertTrue(c.webm)
+    }
+
+    @Test fun saveLeavesOutHdrAndWhatTheTvCantDecode() {
+        val c = StreamPicker.chooseSave(
+            videoOnly = listOf(
+                webm("337", 2160, fps = 60, codec = "vp9.2"),
+                v("701", 2160, fps = 60, codec = "av01.0.13M.10.0.110.09.16.09.0"),
+                v("401", 2160, codec = "av01.0.12M.08"),
+                webm("313", 2160),
+                v("1080avc", 1080),
+            ),
+            audio = listOf(a("aac", 128), opus("opus", 160)),
+            maxHeight = 2160,
+        ) { !it.codec.startsWith("av01") }!!
+        assertEquals("313", c.video.ref)
+    }
+
+    @Test fun saveKeepsH264AtTheSameHeightAndRespectsTheLimit() {
+        val both = listOf(v("1080avc", 1080), webm("1080vp9", 1080, kbps = 3000), webm("2160vp9", 2160))
+        val audio = listOf(a("aac", 128), opus("opus", 160))
+        val c = StreamPicker.chooseSave(both, audio, maxHeight = 1080) { true }!!
+        assertEquals("1080avc", c.video.ref)
+        assertEquals("aac", c.audio!!.ref)
+        assertFalse(c.webm)
+    }
+
+    @Test fun saveNeedsAMatchingAudioStream() {
+        // VP9 without Opus can't be joined (MediaMuxer won't put AAC in WebM): H.264 + AAC instead.
+        val c = StreamPicker.chooseSave(listOf(webm("2160vp9", 2160), v("1080avc", 1080)), listOf(a("aac", 128)), 2160) { true }!!
+        assertEquals("1080avc", c.video.ref)
+        assertNull(StreamPicker.chooseSave(listOf(webm("2160vp9", 2160)), listOf(a("aac", 128)), 2160) { true })
+    }
 }

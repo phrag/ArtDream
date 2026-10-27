@@ -7,11 +7,14 @@ import android.media.MediaMuxer
 import java.io.File
 import java.nio.ByteBuffer
 
-/** Joins a picture-only MP4 and a sound-only M4A into one MP4 without re-encoding anything. */
+/**
+ * Joins a picture-only stream and a sound-only one into one file without re-encoding anything:
+ * MP4 (H.264 + AAC), or WebM (VP9 + Opus) when [join]'s webm is set.
+ */
 object Remux {
 
     /** Throws if either file lacks the expected track or the muxer can't take it. */
-    fun join(video: File, audio: File, out: File) {
+    fun join(video: File, audio: File, out: File, webm: Boolean = false) {
         val vx = MediaExtractor()
         val ax = MediaExtractor()
         var muxer: MediaMuxer? = null
@@ -24,7 +27,7 @@ object Remux {
             vx.selectTrack(vTrack)
             ax.selectTrack(aTrack)
 
-            muxer = MediaMuxer(out.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = MediaMuxer(out.path, if (webm) MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM else MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             val vOut = muxer.addTrack(vx.getTrackFormat(vTrack))
             val aOut = muxer.addTrack(ax.getTrackFormat(aTrack))
             muxer.start()
