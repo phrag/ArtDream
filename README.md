@@ -2,8 +2,8 @@
 
 An Android TV screensaver that shows high-resolution, public-domain paintings
 from museum open-access collections. Built for NVIDIA Shield and stock Android TV
-boxes. Plain Kotlin; the one third-party library is NewPipeExtractor, used only to save YouTube
-videos (see [Your own pictures, videos and YouTube](#your-own-pictures-videos-and-youtube)). GPL-3.0.
+boxes. Plain Kotlin; the third-party libraries are NewPipeExtractor and Media3 ExoPlayer, used only
+for YouTube videos (see [Your own pictures, videos and YouTube](#your-own-pictures-videos-and-youtube)). GPL-3.0.
 
 - Paintings are fitted to the screen over a blurred, dimmed copy of the same painting, so non-16:9 works still look good.
 - Slow Ken Burns drift and crossfades, which also help against OLED burn-in.
@@ -93,10 +93,13 @@ Three ways to add things:
 
 **YouTube links** have two modes on the page:
 
-- **Play link** streams the video in the screensaver through YouTube's embedded player (muted,
-  starting at a random point in a long video, for as long as a slide lasts; needs internet, may
-  show ads, and not every video allows embedding; one that fails is skipped
-  and left out for 15 minutes). On the test TV a YouTube page loaded within ~30 s of another sat
+- **Play link** streams the video in the screensaver (muted, starting at a random point in a long
+  video, for as long as a slide lasts; needs internet). It plays in the app's own player
+  (NewPipeExtractor finds the streams, Media3 plays them on a SurfaceView): the best stream the TV
+  decodes in hardware, up to the screen's resolution, in HDR on an HDR TV when YouTube has it
+  (HDR10 or HLG; YouTube has no Dolby Vision). If that fails, the slide switches to YouTube's
+  embedded player, which is SDR only, may show ads, and needs the video to allow embedding; one that
+  fails there too is skipped and left out for 15 minutes. On the test TV a YouTube page loaded within ~30 s of another sat
   idle for about 30 s before it started, so a non-YouTube slide is preferred right after one.
 - **Save to TV** downloads the video (best H.264 stream up to 1080p, plus AAC audio, joined
   without re-encoding) so it plays offline like any other video. Some older videos only offer
@@ -172,7 +175,8 @@ app/src/main/java/com/phrag/artdream/
 ├── Prefs.kt             # interval, captions, landscape-only, per-source toggles
 ├── OwnMedia.kt          # the user's own pictures/videos/YouTube links (kept apart from ArtCache)
 ├── UploadServer.kt / UploadPage.kt   # the "add from your phone" page (only while My media is open)
-├── YouTube.kt           # link parsing, oEmbed, the embedded-player page
+├── YouTube.kt           # link parsing, oEmbed, the embedded-player page (fallback)
+├── YouTubeLive.kt       # stream URLs + decoder checks for playing links natively (HDR)
 ├── YouTubeDownloads.kt / StreamPicker.kt / Remux.kt / NewPipeDownloader.kt   # Save to TV
 ├── Artwork.kt / Http.kt
 └── source/              # one class per museum API

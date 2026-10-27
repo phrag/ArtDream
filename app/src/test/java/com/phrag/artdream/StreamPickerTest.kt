@@ -1,9 +1,11 @@
 package com.phrag.artdream
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StreamPickerTest {
@@ -100,5 +102,48 @@ class StreamPickerTest {
         )!!
         assertSame(marker, c.video.ref)
         assertNotNull(c.audio)
+    }
+
+    @Test fun hdrCodecStrings() {
+        assertTrue(StreamPicker.isHdr("vp09.02.51.10.01.09.16.09.00"))
+        assertTrue(StreamPicker.isHdr("av01.0.12M.10.0.110.09.16.09.0"))
+        assertTrue(StreamPicker.isHdr("av01.0.12M.10.0.110.09.18.09.0"))   // HLG
+        assertFalse(StreamPicker.isHdr("vp9"))
+        assertFalse(StreamPicker.isHdr("vp09.00.51.08.01.01.01.01.00"))
+        assertFalse(StreamPicker.isHdr("av01.0.12M.08"))
+        assertFalse(StreamPicker.isHdr("av01.0.12M.10.0.110.01.01.01.0"))  // 10-bit SDR
+        assertFalse(StreamPicker.isHdr("avc1.640033"))
+    }
+
+    private val hdr4k = v("2160hdr", 2160, fps = 60, codec = "vp09.02.51.10.01.09.16.09.00", mp4 = false)
+    private val sdr4k = v("2160sdr", 2160, fps = 60, codec = "vp9", mp4 = false)
+    private val av1 = v("2160av1", 2160, fps = 60, codec = "av01.0.12M.08")
+    private val avc = v("1080avc", 1080)
+
+    @Test fun liveTakesTheHdrStreamOnAnHdrScreen() {
+        val c = StreamPicker.chooseLive(listOf(avc, sdr4k, hdr4k), listOf(a("128", 128), a("160o", 160, "opus", m4a = false)),
+            maxHeight = 2160, hdrScreen = true) { true }!!
+        assertEquals("2160hdr", c.video.ref)
+        assertEquals("160o", c.audio!!.ref)
+    }
+
+    @Test fun liveTakesSdrOnAnSdrScreen() {
+        val c = StreamPicker.chooseLive(listOf(hdr4k, sdr4k), emptyList(), maxHeight = 2160, hdrScreen = false) { true }!!
+        assertEquals("2160sdr", c.video.ref)
+        assertNull(c.audio)
+    }
+
+    @Test fun liveSkipsWhatTheTvCantDecodeAndWhatsTooTall() {
+        val c = StreamPicker.chooseLive(listOf(hdr4k, av1, avc), emptyList(), maxHeight = 2160, hdrScreen = true) {
+            !it.codec.startsWith("av01") && !it.codec.startsWith("vp09")
+        }!!
+        assertEquals("1080avc", c.video.ref)
+        assertEquals("1080avc", StreamPicker.chooseLive(listOf(hdr4k, avc), emptyList(), maxHeight = 1080, hdrScreen = true) { true }!!.video.ref)
+        assertNull(StreamPicker.chooseLive(listOf(hdr4k), emptyList(), maxHeight = 2160, hdrScreen = true) { false })
+    }
+
+    @Test fun liveTakesTallerSdrOverShorterHdr() {
+        val hdr1080 = v("1080hdr", 1080, codec = "vp09.02.40.10.01.09.16.09.00", mp4 = false)
+        assertEquals("2160sdr", StreamPicker.chooseLive(listOf(hdr1080, sdr4k), emptyList(), 2160, true) { true }!!.video.ref)
     }
 }

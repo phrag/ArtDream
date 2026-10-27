@@ -64,8 +64,10 @@ android {
 }
 
 dependencies {
-    // Runtime: nothing but the YouTube extractor below, which only the "Save to TV" button uses.
+    // Runtime: the YouTube extractor below ("Save to TV", and stream URLs for YouTube links) and
+    // Media3 ExoPlayer, which plays YouTube links natively so HDR streams reach the TV as HDR.
     // Everything else is HttpURLConnection + org.json (bundled) + BitmapFactory + MediaPlayer.
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
     // NewPipeExtractor is GPL-3.0 like this app. Pinned to a release tag; update deliberately,
     // YouTube changes break old versions.
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")

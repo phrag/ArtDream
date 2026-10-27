@@ -55,4 +55,42 @@ object StreamPicker {
         // Picture only is still a fine screensaver (it plays muted by default).
         return bestVideo?.let { Choice(it, null) }
     }
+
+    /**
+     * True for a stream YouTube marks HDR in its codec string: VP9 profile 2 (10-bit) or 10-bit AV1
+     * with the PQ or HLG transfer (or without colour fields, which YouTube only omits for SDR).
+     * "vp09.02.51.10.01.09.16.09.00" and "av01.0.12M.10.0.110.09.16.09.0" are HDR10;
+     * "vp9", "vp09.00.51.08…" and "av01.0.08M.08" are not.
+     */
+    fun isHdr(codec: String): Boolean {
+        val f = codec.trim().lowercase().split('.')
+        return when (f.firstOrNull()) {
+            "vp09" -> f.getOrNull(1) == "02"
+            "av01" -> f.getOrNull(3) == "10" && (f.size <= 7 || f[7] == "16" || f[7] == "18")
+            else -> false
+        }
+    }
+
+    /**
+     * Which streams to play live (not download): the tallest video-only stream up to [maxHeight]
+     * that [canPlay] says this TV decodes in hardware, HDR over SDR at the same height when
+     * [hdrScreen] (SDR over HDR otherwise, since the TV would show HDR washed out), then higher
+     * frame rate, then bitrate. Any codec and container is fine here (no muxing), so VP9 and AV1
+     * count too: YouTube only has HDR and most 4K in those. Audio: highest bitrate, any codec.
+     */
+    fun chooseLive(
+        videoOnly: List<Video>,
+        audio: List<Audio>,
+        maxHeight: Int,
+        hdrScreen: Boolean,
+        canPlay: (Video) -> Boolean,
+    ): Choice? {
+        val order = compareByDescending<Video> { it.height }
+            .thenByDescending { isHdr(it.codec) == hdrScreen }
+            .thenByDescending { it.fps }
+            .thenByDescending { it.bitrate }
+        val video = videoOnly.filter { it.progressive && it.height in 1..maxHeight && canPlay(it) }
+            .sortedWith(order).firstOrNull() ?: return null
+        return Choice(video, audio.filter { it.progressive }.maxByOrNull { it.bitrate })
+    }
 }

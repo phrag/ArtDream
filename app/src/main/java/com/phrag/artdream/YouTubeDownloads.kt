@@ -135,9 +135,11 @@ object YouTubeDownloads {
         }
     }
 
-    @Synchronized private fun init() {
+    /** Sets NewPipeExtractor up once; also used by [YouTubeLive]. */
+    @Synchronized fun init() {
         if (initialised) return
         NewPipe.init(NewPipeDownloader(), Localization.DEFAULT)
+        YouTubeLive.registerHdrItags()
         initialised = true
     }
 
