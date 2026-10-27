@@ -55,7 +55,7 @@ object YouTubeDownloads {
     fun jobs(): List<Job> = synchronized(jobs) { jobs.values.toList() }
 
     /** Starts (or returns the running) download of [id]. [onChange] is called from the worker thread. */
-    fun submit(own: OwnMedia, id: String, maxHeight: Int = 1080, onChange: () -> Unit): Job = synchronized(jobs) {
+    fun submit(own: OwnMedia, id: String, maxHeight: Int = 2160, onChange: () -> Unit): Job = synchronized(jobs) {
         jobs[id]?.takeIf { it.active }?.let { return it }
         val job = Job(id)
         jobs.remove(id)
@@ -93,38 +93,35 @@ object YouTubeDownloads {
             Log.i(TAG, "youtube ${job.id} muxed: " + info.videoStreams.joinToString { summary(it) })
             Log.i(TAG, "youtube ${job.id} audio: " + info.audioStreams.joinToString { "${it.averageBitrate}k ${it.codec} ${it.format?.suffix}" })
 
-            val choice = StreamPicker.choose(
+            // The best stream this TV decodes in hardware (VP9 for 4K: YouTube's H.264 stops at
+            // 1080p); plain H.264 when no such pair is offered, or if joining VP9 fails.
+            val best = StreamPicker.chooseSave(
+                videoOnly = info.videoOnlyStreams.map(::describe),
+                audio = info.audioStreams.map(::describe),
+                maxHeight = maxHeight,
+                canPlay = { YouTubeLive.canDecode(it.codec, (it.ref as VideoStream).width, it.height, it.fps, hdr = false, hdrScreen = false).first },
+            )
+            val h264 = StreamPicker.choose(
                 videoOnly = info.videoOnlyStreams.map(::describe),
                 muxed = info.videoStreams.map(::describe),
                 audio = info.audioStreams.map(::describe),
                 maxHeight = maxHeight,
-            ) ?: throw IOException("no H.264 MP4 stream was offered (only formats this TV may not play)")
-            val video = choice.video.ref as VideoStream
-            val audio = choice.audio?.ref as AudioStream?
-
-            val vUrl = video.content
-            val aUrl = audio?.content
-            val vSize = size(vUrl, video.itagItem?.contentLength ?: -1)
-            val aSize = if (audio != null) size(audio.content, audio.itagItem?.contentLength ?: -1) else 0L
-            job.total = vSize + aSize
-            if (job.total > OwnMedia.MAX_FILE_BYTES) throw IOException("it's ${job.total / (1024 * 1024)} MB, over the ${OwnMedia.MAX_FILE_BYTES / (1024 * 1024 * 1024)} GB limit")
-            if (!own.hasRoomFor(job.total)) throw IOException("not enough room left on the TV")
-
-            job.state = State.DOWNLOADING; onChange()
-            val vPart = own.newPart().also { parts += it }
-            fetch(vUrl, vPart, vSize, job, 0L, onChange)
-            val result: File
-            if (aUrl != null) {
-                val aPart = own.newPart().also { parts += it }
-                fetch(aUrl, aPart, aSize, job, vSize, onChange)
-                job.state = State.JOINING; onChange()
-                result = own.newPart().also { parts += it }
-                Remux.join(vPart, aPart, result)
-            } else {
-                result = vPart
+            )
+            val choices = listOfNotNull(best, h264.takeIf { best == null || best.webm })
+            if (choices.isEmpty()) throw IOException("no stream this TV can play was offered")
+            for ((i, choice) in choices.withIndex()) {
+                try {
+                    save(job, own, choice, parts, onChange)
+                    break
+                } catch (e: Exception) {
+                    // Too big, or MediaMuxer refused VP9: the 1080p H.264 version may still do.
+                    if (i == choices.lastIndex || e.message == "stopped") throw e
+                    Log.w(TAG, "youtube ${job.id}: saving ${summary(choice.video.ref as VideoStream)} failed ($e), trying H.264")
+                    parts.forEach { it.delete() }
+                    parts.clear()
+                    job.done = 0
+                }
             }
-            val name = OwnMedia.sanitizeName(job.title.ifBlank { "YouTube ${job.id}" } + ".mp4") ?: "YouTube ${job.id}.mp4"
-            own.add(result, name)
             job.state = State.DONE
         } catch (e: Exception) {
             Log.w(TAG, "youtube download ${job.id}: $e")
@@ -134,6 +131,39 @@ object YouTubeDownloads {
             parts.forEach { it.delete() }
             onChange()
         }
+    }
+
+    /** Downloads [choice]'s streams, joins them and adds the result to [own]. */
+    private fun save(job: Job, own: OwnMedia, choice: StreamPicker.Choice, parts: MutableList<File>, onChange: () -> Unit) {
+        val video = choice.video.ref as VideoStream
+        val audio = choice.audio?.ref as AudioStream?
+        Log.i(TAG, "youtube ${job.id} saving: ${video.height}p${video.fps} ${video.codec} ${video.format?.suffix}" +
+            (audio?.let { " + ${it.averageBitrate}k ${it.codec} ${it.format?.suffix}" } ?: ""))
+
+        val vUrl = video.content
+        val aUrl = audio?.content
+        val vSize = size(vUrl, video.itagItem?.contentLength ?: -1)
+        val aSize = if (audio != null) size(audio.content, audio.itagItem?.contentLength ?: -1) else 0L
+        job.total = vSize + aSize
+        if (job.total > OwnMedia.MAX_FILE_BYTES) throw IOException("it's ${job.total / (1024 * 1024)} MB, over the ${OwnMedia.MAX_FILE_BYTES / (1024 * 1024 * 1024)} GB limit")
+        if (!own.hasRoomFor(job.total)) throw IOException("not enough room left on the TV")
+
+        job.state = State.DOWNLOADING; onChange()
+        val vPart = own.newPart().also { parts += it }
+        fetch(vUrl, vPart, vSize, job, 0L, onChange)
+        val result: File
+        if (aUrl != null) {
+            val aPart = own.newPart().also { parts += it }
+            fetch(aUrl, aPart, aSize, job, vSize, onChange)
+            job.state = State.JOINING; onChange()
+            result = own.newPart().also { parts += it }
+            Remux.join(vPart, aPart, result, webm = choice.webm)
+        } else {
+            result = vPart
+        }
+        val ext = if (choice.webm) ".webm" else ".mp4"
+        val name = OwnMedia.sanitizeName(job.title.ifBlank { "YouTube ${job.id}" } + ext) ?: "YouTube ${job.id}$ext"
+        own.add(result, name)
     }
 
     /** Sets NewPipeExtractor up once; also used by [YouTubeLive]. */
@@ -156,6 +186,7 @@ object YouTubeDownloads {
         mp4 = s.format?.suffix.equals("mp4", ignoreCase = true),
         progressive = s.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && s.isUrl,
         hasAudio = !s.isVideoOnly,
+        webm = s.format?.suffix.equals("webm", ignoreCase = true),
     )
 
     private fun describe(s: AudioStream) = StreamPicker.Audio(
@@ -164,6 +195,7 @@ object YouTubeDownloads {
         codec = s.codec.orEmpty(),
         m4a = s.format?.suffix.equals("m4a", ignoreCase = true),
         progressive = s.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && s.isUrl,
+        webm = s.format?.suffix.equals("webm", ignoreCase = true),
     )
 
     /** The stream's length: from the extractor if it knows, else asked of the server. */

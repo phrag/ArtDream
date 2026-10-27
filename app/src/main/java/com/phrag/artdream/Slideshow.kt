@@ -14,6 +14,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -449,8 +450,8 @@ class Slideshow(private val context: Context, private val only: String? = null) 
 
     /**
      * What the overlay says. The native player's values are the format the decoder was handed
-     * (so "HDR10" means the decoder really got a PQ stream); an own file's come from its
-     * container, and it plays on a TextureView, which shows HDR as SDR.
+     * (so "HDR10" means the decoder really got a PQ stream); an own file's too, unless it fell back
+     * to MediaPlayer: then they come from its container, and a TextureView shows HDR as SDR.
      */
     @OptIn(UnstableApi::class)
     private fun infoLines(slide: Slide): List<String> {
@@ -480,9 +481,26 @@ class Slideshow(private val context: Context, private val only: String? = null) 
                 out += "quality " + (slide.webQuality ?: "starting…")
                 out += "HDR: none (the web player is SDR only)"
             }
+            exo != null && slide.video != null -> {
+                val v = slide.file
+                out += "Own file (ExoPlayer)"
+                val f = exo.videoFormat
+                if (f == null) {
+                    out += "starting…"
+                } else {
+                    out += VideoInfo.picture(f.width, f.height, if (f.frameRate > 0f) f.frameRate else v?.fps ?: 0f)
+                    out += VideoInfo.codecName(f.sampleMimeType, f.codecs, v?.profile)
+                    out += "HDR: " + VideoInfo.hdrName(f.colorInfo?.colorTransfer, f.sampleMimeType, f.codecs)
+                    val bps = listOf(f.averageBitrate.toLong(), f.bitrate.toLong(), v?.bitrate ?: 0L).firstOrNull { it > 0 } ?: 0L
+                    VideoInfo.bitrate(bps)?.let { out += if (bps == v?.bitrate && v.averaged) "$it (average)" else it }
+                }
+                val dropped = exo.videoDecoderCounters?.let { it.ensureUpdated(); it.droppedBufferCount }
+                out += listOfNotNull(slide.decoderName, dropped?.let { "dropped $it" }).joinToString(" · ").ifEmpty { "decoder starting…" }
+            }
             slide.video != null -> {
                 val v = slide.file
-                out += "Own file (MediaPlayer)"
+                out += "Own file (MediaPlayer" + if (slide.nativeFailed != null) ", fallback)" else ")"
+                slide.nativeFailed?.let { out += "native: $it" }
                 out += VideoInfo.picture(slide.videoW, slide.videoH, v?.fps ?: 0f)
                 out += VideoInfo.codecName(v?.mime, null, v?.profile)
                 val hdr = VideoInfo.hdrName(v?.transfer, v?.mime, null)
@@ -508,8 +526,71 @@ class Slideshow(private val context: Context, private val only: String? = null) 
     private fun videoShowMs(slide: Slide, intervalMs: Long): Long =
         if (slide.durationMs < intervalMs) intervalMs else minOf(slide.durationMs, VIDEO_CAP_MS) + 500
 
-    /** The video, fitted to the screen on a [TextureView] (unlike a SurfaceView it fades with the slide). */
+    /**
+     * An own video, fitted to the screen and played by Media3 on a SurfaceView, like a native
+     * YouTube link: a SurfaceView hands the decoder's output straight to the display, so an HDR10,
+     * HLG or Dolby Vision file reaches the TV as HDR (a TextureView composites it as SDR app
+     * content). It doesn't fade with the slide. If ExoPlayer can't play the file, or it never
+     * starts, the slide switches to Android's MediaPlayer ([mediaPlayerView]).
+     */
+    @OptIn(UnstableApi::class)
     private fun videoView(slide: Slide, intervalMs: Long): View {
+        val file = slide.video!!
+        val dm = context.resources.displayMetrics
+        val vw = slide.videoW.coerceAtLeast(1)
+        val vh = slide.videoH.coerceAtLeast(1)
+        val fit = minOf(dm.widthPixels.toFloat() / vw, dm.heightPixels.toFloat() / vh)
+        val holder = FrameLayout(context)
+        val surface = SurfaceView(context)
+        holder.addView(surface, FrameLayout.LayoutParams((vw * fit).toInt(), (vh * fit).toInt(), Gravity.CENTER))
+
+        var started = false
+        fun fallBack(why: String) = main.post {
+            if (slide.disposed || slide.exo == null) return@post
+            Log.w(TAG, "video ${file.name} native: $why; using MediaPlayer")
+            slide.nativeFailed = why
+            slide.exo?.release()
+            slide.exo = null
+            slide.decoderName = null
+            holder.removeAllViews()
+            holder.addView(mediaPlayerView(slide, intervalMs), FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }
+
+        val exo = ExoPlayer.Builder(context).build()
+        slide.exo = exo
+        exo.setVideoSurfaceView(surface)
+        exo.volume = if (sound) 1f else 0f
+        exo.repeatMode = if (only != null || slide.durationMs < intervalMs) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        exo.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                if (!started) {
+                    // What the decoder really got, to tell "the file is SDR" from "HDR lost on the way".
+                    val f = exo.videoFormat
+                    Log.i(TAG, "video ${file.name} native, decoder: ${slide.decoderName} ${f?.sampleMimeType} ${f?.codecs} ${f?.width}x${f?.height}" +
+                        " transfer=${transferName(f?.colorInfo?.colorTransfer)} screen HDR types=$hdrTypes")
+                }
+                started = true
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                fallBack("error ${error.errorCodeName} ${error.message}")
+            }
+        })
+        exo.addAnalyticsListener(object : AnalyticsListener {
+            override fun onVideoDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long,
+            ) {
+                slide.decoderName = decoderName
+            }
+        })
+        exo.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+        exo.playWhenReady = true
+        exo.prepare()
+        main.postDelayed({ if (!started) fallBack("never started") }, NATIVE_START_MS)
+        return holder
+    }
+
+    /** The fallback: Android's MediaPlayer on a [TextureView] (it shows HDR as SDR). */
+    private fun mediaPlayerView(slide: Slide, intervalMs: Long): View {
         val dm = context.resources.displayMetrics
         val vw = slide.videoW.coerceAtLeast(1)
         val vh = slide.videoH.coerceAtLeast(1)

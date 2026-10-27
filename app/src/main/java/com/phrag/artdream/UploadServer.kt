@@ -87,6 +87,8 @@ class UploadServer(
     private val events: Events,
     /** Part of every URL. The caller keeps one for as long as the screen lives, so a restart doesn't change the address. */
     val token: String = newToken(),
+    /** The TV's own picture height: "Save to TV" downloads nothing taller. */
+    private val screenHeight: Int = 2160,
 ) {
 
     /** Called on server threads; post to the main thread before touching views. */
@@ -216,7 +218,7 @@ class UploadServer(
             ?: return fail(out, 400, raw.take(60), "That doesn't look like a YouTube video link")
         if (req.query["mode"] == "download") {
             // Runs in the background; the page and the TV screen follow it through the job list.
-            val job = YouTubeDownloads.submit(own, id) { events.onJobs() }
+            val job = YouTubeDownloads.submit(own, id, screenHeight) { events.onJobs() }
             return reply(out, 200, JSON, JSONObject().put("ok", true).put("name", job.title.ifBlank { id }).put("mode", "download").toString())
         }
         val link = try {

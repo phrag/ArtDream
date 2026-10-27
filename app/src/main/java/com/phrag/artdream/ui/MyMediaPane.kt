@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -118,6 +119,13 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         if (shown && started) startServer() else stopServer()
     }
 
+    /** The display's own height (a 4K TV runs apps at 1080p but shows 2160 lines); 1080 if unknown. */
+    @Suppress("DEPRECATION")
+    private fun screenHeight(): Int = runCatching {
+        val mode = (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.mode
+        minOf(mode.physicalWidth, mode.physicalHeight)
+    }.getOrDefault(0).takeIf { it > 0 } ?: 1080
+
     private fun startServer() {
         if (server != null) return
         val s = UploadServer(own, object : UploadServer.Events {
@@ -137,7 +145,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
                     if (!job.active) reload()
                 }
             }
-        }, token)
+        }, token, screenHeight())
         if (!s.start()) {
             addressView.text = ""
             qrView.setText(null)
