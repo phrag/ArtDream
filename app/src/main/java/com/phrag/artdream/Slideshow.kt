@@ -1,7 +1,9 @@
 package com.phrag.artdream
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -15,8 +17,10 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.service.dreams.DreamService
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -27,6 +31,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.Window
 import android.view.WindowManager
 import android.view.animation.LinearInterpolator
 import android.webkit.ConsoleMessage
@@ -72,6 +77,9 @@ import kotlin.random.Random
  *
  * With [only] (a My media item's key) it plays just that item, on demand: a video or YouTube
  * link from the start and on repeat, a picture held, with sound and no night dimming.
+ *
+ * With "HDR only" on (Prefs.hdrOnly) it plays only the user's own HDR pictures and videos, filling
+ * the screen, and asks for the window's HDR (or wide gamut) colour mode while it runs.
  */
 class Slideshow(private val context: Context, private val only: String? = null) {
 
@@ -92,6 +100,8 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         val live: YouTubeLive.Streams? = null,
         /** What an own video file's container says about its picture, for the info overlay. */
         val file: FileVideo? = null,
+        /** The HDR kind found by [HdrProbe], in HDR only mode. */
+        val hdr: String? = null,
     ) {
         var player: MediaPlayer? = null
         var exo: ExoPlayer? = null
@@ -130,6 +140,11 @@ class Slideshow(private val context: Context, private val only: String? = null) 
     private val cache = ArtCache(context.applicationContext)
     private val own = OwnMedia(context.applicationContext)
     private val prefs = Prefs(context.applicationContext)
+    private val hdrProbe = HdrProbe(context.applicationContext)
+    /** HDR only mode, fixed for a run (from [start] to [stop]); never when playing one item. */
+    private var hdrMode = false
+    /** Own items' HDR kinds from the last playlist build (key -> kind), for the slides. */
+    @Volatile private var hdrKinds: Map<String, String> = emptyMap()
 
     private val status = TextView(context).apply {
         setTextColor(Color.GRAY)
@@ -165,13 +180,22 @@ class Slideshow(private val context: Context, private val only: String? = null) 
     fun start() {
         if (running || released) return
         running = true
+        val hdr = only == null && prefs.hdrOnly
+        if (hdr != hdrMode) queue.clear()   // switched since the last run: an HDR only round and a normal one don't mix
+        hdrMode = hdr
+        if (hdrMode) {
+            status.text = "Looking for HDR pictures and videos…"
+            setHdrWindow(true)
+        } else {
+            status.text = "Fetching pictures…"
+        }
         if (only != null) {
             advance()
             return
         }
         // Top up the cache in the background (one refresh at a time) — unless only
         // the user's own media is wanted, which needs no downloads.
-        if (prefs.ownMode != Prefs.OWN_ONLY && refreshing.compareAndSet(false, true)) {
+        if (prefs.ownMode != Prefs.OWN_ONLY && !hdrMode && refreshing.compareAndSet(false, true)) {
             network.execute {
                 val added = try {
                     cache.refresh()
@@ -211,6 +235,7 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         current = null
         status.visibility = View.GONE
         clock?.visibility = View.GONE
+        if (hdrMode) setHdrWindow(false)
     }
 
     /** Skip to the next image now (no-op unless running). */
@@ -234,6 +259,17 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         }
         val gen = ++generation
         main.removeCallbacksAndMessages(null)
+        if (queue.isEmpty() && hdrMode) {
+            // Finding the HDR files can read every file once, so it runs on the loader thread.
+            loader.execute {
+                val round = try { hdrQueue() } catch (e: Throwable) { Log.w(TAG, "hdr playlist: $e"); emptyList() }
+                main.post {
+                    if (!running || gen != generation) return@post
+                    if (round.isEmpty()) noHdr() else { queue.addAll(round); advance() }
+                }
+            }
+            return
+        }
         if (queue.isEmpty()) queue.addAll(buildQueue())
         val next = takeNext()
         if (next == null && only != null) {
@@ -289,6 +325,36 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         status.visibility = View.VISIBLE
     }
 
+    /** HDR only, with nothing HDR to show: say so (not a blank screen) and look again in a while. */
+    private fun noHdr() {
+        current?.let(::discard)
+        current = null
+        status.text = "HDR only is on, but none of your media is HDR.\n" +
+            "Add HDR10, HLG or Dolby Vision videos or HDR photos in My media, or switch HDR only off."
+        status.visibility = View.VISIBLE
+        main.postDelayed(::advance, NO_HDR_RETRY_MS)
+    }
+
+    /**
+     * One round of HDR only: the user's own pictures and videos that are HDR and play as HDR here,
+     * shuffled (museum art and YouTube links are SDR). Favourites only applies as usual.
+     */
+    private fun hdrQueue(): List<ArtCache.Entry> {
+        if (own.hasPending()) runCatching { own.importPending() }
+        val items = own.items()
+        hdrProbe.prune(items)
+        val kinds = HashMap<String, String>()
+        for (item in items) {
+            val r = hdrProbe.probe(item)
+            if (r.hdr) kinds[item.key] = r.kind!!
+        }
+        hdrKinds = kinds
+        val hdr = items.filter { it.key in kinds }.map { own.entry(it) }
+        val favs = if (prefs.favouritesOnly) hdr.filter { it.art.key in prefs.favourites } else hdr
+        Log.i(TAG, "hdr only: ${hdr.size} of ${items.size} own items are HDR")
+        return favs.ifEmpty { hdr }.shuffled()
+    }
+
     /** Sound on the user's own videos: always when one was picked to play, else the setting. */
     private val sound get() = only != null || prefs.videoSound
 
@@ -342,8 +408,14 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         val screenW = context.resources.displayMetrics.widthPixels.coerceAtLeast(1280)
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= screenW) sample *= 2
-        val image = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
-            ?: return null
+        val hdr = if (hdrMode) hdrKinds[entry.art.id] else null
+        val image = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+            inSampleSize = sample
+            // A PQ/HLG picture is 10 bits or more; keep them (a gain map photo's base is 8-bit anyway).
+            if (hdr != null && hdr != HdrMedia.GAIN_MAP) inPreferredConfig = Bitmap.Config.RGBA_F16
+        }) ?: return null
+        // HDR only: black around the picture, never a dimmed SDR backdrop.
+        if (hdrMode) return Slide(entry.art, image, Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888), hdr = hdr)
 
         // Backdrop: shrink to a few dozen pixels; upscaling with filtering = a cheap blur
         // that works on API 26 (RenderEffect is 31+).
@@ -374,14 +446,18 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         val isVideo = slide.video != null
         val isYouTube = slide.youtubeId != null
         val painting: View = if (isYouTube && slide.live != null) nativeYouTubeView(slide) else if (isYouTube) youtubeView(slide) else if (isVideo) videoView(slide, intervalMs) else ImageView(context).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setImageBitmap(slide.image)
+            val image = slide.image!!
+            val dm = context.resources.displayMetrics
+            scaleType = if (hdrMode && HdrMedia.fillsScreen(image.width, image.height, dm.widthPixels, dm.heightPixels))
+                ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
+            setImageBitmap(image)
             if (isNight()) colorFilter = NIGHT_FILTER
         }
+        if (hdrMode) logHdr(slide)
         val slideView = FrameLayout(context).apply {
             alpha = 0f
             tag = slide   // so discard() can recycle its bitmaps
-            addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            if (!hdrMode) addView(backdrop, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(painting, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             // A video can't take the bitmap colour filter, so dim and warm it with a veil.
             if ((isVideo || isYouTube) && isNight()) addView(View(context).apply { setBackgroundColor(NIGHT_VEIL) },
@@ -391,7 +467,7 @@ class Slideshow(private val context: Context, private val only: String? = null) 
             val needsCredit = slide.art.license.startsWith("CC BY")
             if (prefs.showCaption || needsCredit) addView(caption(slide.art, full = prefs.showCaption),
                 FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))
-            if ((isVideo || isYouTube) && prefs.videoInfo) addView(infoOverlay().also { slide.info = it },
+            if ((isVideo || isYouTube || hdrMode) && prefs.videoInfo) addView(infoOverlay().also { slide.info = it },
                 FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
                     setMargins(dp(48), dp(48), dp(48), dp(48))
                 })
@@ -505,6 +581,14 @@ class Slideshow(private val context: Context, private val only: String? = null) 
                     ?.getInt(MediaPlayer.MetricsConstants.FRAMES_DROPPED)
                 listOfNotNull(codec, dropped?.let { "dropped $it" }).joinToString(" · ").takeIf { it.isNotEmpty() }?.let { out += it }
             }
+            slide.image != null -> {
+                val b = slide.image
+                out += "Own picture" + (slide.hdr?.let { ": $it" } ?: "")
+                out += VideoInfo.picture(b.width, b.height, 0f)
+                out += "bitmap ${b.config} · ${b.colorSpace?.name ?: "no colour space"}"
+                if (Build.VERSION.SDK_INT >= 34) out += if (b.hasGainmap()) "gain map: yes" else "gain map: no"
+                out += "window: ${colorModeName(window?.colorMode)}"
+            }
             else -> out += "starting…"
         }
         val mode = displayMode
@@ -529,10 +613,9 @@ class Slideshow(private val context: Context, private val only: String? = null) 
     @OptIn(UnstableApi::class)
     private fun videoView(slide: Slide, intervalMs: Long): View {
         val file = slide.video!!
-        val dm = context.resources.displayMetrics
         val vw = slide.videoW.coerceAtLeast(1)
         val vh = slide.videoH.coerceAtLeast(1)
-        val fit = minOf(dm.widthPixels.toFloat() / vw, dm.heightPixels.toFloat() / vh)
+        val fit = fitScale(vw, vh)
         val holder = FrameLayout(context)
         val surface = SurfaceView(context)
         holder.addView(surface, FrameLayout.LayoutParams((vw * fit).toInt(), (vh * fit).toInt(), Gravity.CENTER))
@@ -582,12 +665,22 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         return holder
     }
 
+    /**
+     * How much to scale a [vw]x[vh] video to the screen: fitted, or in HDR only mode filling it
+     * when that crops little (see [HdrMedia.fillsScreen]).
+     */
+    private fun fitScale(vw: Int, vh: Int): Float {
+        val dm = context.resources.displayMetrics
+        val sx = dm.widthPixels.toFloat() / vw
+        val sy = dm.heightPixels.toFloat() / vh
+        return if (hdrMode && HdrMedia.fillsScreen(vw, vh, dm.widthPixels, dm.heightPixels)) maxOf(sx, sy) else minOf(sx, sy)
+    }
+
     /** The fallback: Android's MediaPlayer on a [TextureView] (it shows HDR as SDR). */
     private fun mediaPlayerView(slide: Slide, intervalMs: Long): View {
-        val dm = context.resources.displayMetrics
         val vw = slide.videoW.coerceAtLeast(1)
         val vh = slide.videoH.coerceAtLeast(1)
-        val fit = minOf(dm.widthPixels.toFloat() / vw, dm.heightPixels.toFloat() / vh)
+        val fit = fitScale(vw, vh)
         val tv = TextureView(context)
         tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
@@ -773,6 +866,54 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         }
     }
 
+    /** The window the slideshow is in: the screensaver's or the preview activity's. */
+    private val window: Window? get() = when (context) {
+        is Activity -> context.window
+        is DreamService -> context.window
+        else -> null
+    }
+
+    /**
+     * HDR only asks for the window's HDR colour mode, so an HDR picture is drawn as HDR rather
+     * than squeezed into SDR. Android draws app content in HDR from Android 14; before that
+     * (the SHIELD runs Android 11) the most an app can ask for is wide gamut, and pictures reach
+     * the TV as SDR. Videos don't depend on this: they go to the TV on their own surface.
+     */
+    @Suppress("DEPRECATION")
+    private fun setHdrWindow(on: Boolean) {
+        val w = window ?: return
+        val display = runCatching { (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay }.getOrNull()
+        val mode = when {
+            !on -> ActivityInfo.COLOR_MODE_DEFAULT
+            Build.VERSION.SDK_INT >= 34 && display?.isHdr == true -> ActivityInfo.COLOR_MODE_HDR
+            display?.isWideColorGamut == true -> ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT
+            else -> ActivityInfo.COLOR_MODE_DEFAULT
+        }
+        runCatching { w.colorMode = mode }.onFailure { Log.w(TAG, "window colour mode: $it") }
+        if (on) Log.i(TAG, "hdr only: Android ${Build.VERSION.SDK_INT}, screen isHdr=${display?.isHdr} wideGamut=${display?.isWideColorGamut}" +
+            " HDR types=$hdrTypes, asked ${colorModeName(mode)}, window has ${colorModeName(w.colorMode)}")
+    }
+
+    private fun colorModeName(m: Int?) = when (m) {
+        ActivityInfo.COLOR_MODE_DEFAULT -> "default (SDR)"
+        ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT -> "wide colour gamut"
+        ActivityInfo.COLOR_MODE_HDR -> "HDR"
+        null -> "unknown"
+        else -> "$m"
+    }
+
+    /** What an HDR only slide is, and what the window and screen take, for checking on the TV with logcat. */
+    private fun logHdr(slide: Slide) {
+        val b = slide.image
+        val what = if (b != null) {
+            "picture ${slide.art.id} ${slide.hdr}: ${b.width}x${b.height} ${b.config} ${b.colorSpace?.name}" +
+                (if (Build.VERSION.SDK_INT >= 34) " gainmap=${b.hasGainmap()}" else "")
+        } else {
+            "video ${slide.art.id} ${slide.hdr}"
+        }
+        Log.i(TAG, "hdr only: $what; window ${colorModeName(window?.colorMode)}, screen HDR types=$hdrTypes")
+    }
+
     @OptIn(UnstableApi::class)
     private fun transferName(t: Int?) = when (t) {
         C.COLOR_TRANSFER_ST2084 -> "PQ (HDR10)"
@@ -838,7 +979,8 @@ class Slideshow(private val context: Context, private val only: String? = null) 
                 Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888)   // black
             }
             return Slide(entry.art, null, backdrop, entry.image, w, h, durationMs,
-                file = if (prefs.videoInfo) fileVideo(entry.image, durationMs) else null)
+                file = if (prefs.videoInfo) fileVideo(entry.image, durationMs) else null,
+                hdr = if (hdrMode) hdrKinds[entry.art.id] else null)
         } finally {
             runCatching { r.release() }
         }
@@ -999,6 +1141,8 @@ class Slideshow(private val context: Context, private val only: String? = null) 
         const val YOUTUBE_GAP_MS = 35_000L
         /** How long a failed YouTube link is left out of the playlist. */
         const val BROKEN_LINK_MS = 15 * 60_000L
+        /** HDR only with nothing HDR: how soon to look again (files may have been added). */
+        const val NO_HDR_RETRY_MS = 60_000L
         /** How often the video info overlay is refreshed. */
         const val INFO_TICK_MS = 2_000L
         /** Warm dim veil over videos at night (the bitmap [NIGHT_FILTER] can't apply to them). */

@@ -97,6 +97,14 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("video_info", false)
         set(v) = sp.edit().putBoolean("video_info", v).apply()
 
+    /**
+     * Only the user's own HDR pictures and videos, full screen: no museum art, YouTube links or
+     * SDR files. Overrides "Show my media".
+     */
+    var hdrOnly: Boolean
+        get() = sp.getBoolean("hdr_only", false)
+        set(v) = sp.edit().putBoolean("hdr_only", v).apply()
+
     fun isSourceOn(id: String): Boolean = sp.getBoolean("src_$id", true)
     fun setSourceOn(id: String, on: Boolean) = sp.edit().putBoolean("src_$id", on).apply()
 

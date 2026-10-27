@@ -11,6 +11,7 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.phrag.artdream.HdrProbe
 import com.phrag.artdream.OwnMedia
 import com.phrag.artdream.PreviewActivity
 import com.phrag.artdream.Prefs
@@ -40,6 +41,14 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         "Shows resolution, frame rate, codec, HDR and bitrate in a corner while a video plays", prefs.videoInfo) {
         prefs.videoInfo = it
     }
+    private val hdrRow = SettingRow.toggle(ctx, "HDR only", null, prefs.hdrOnly) {
+        prefs.hdrOnly = it
+        renderMode()
+        renderHdr()
+    }
+    private val hdrProbe = HdrProbe(ctx.applicationContext)
+    /** How many own items are HDR (and play as HDR here); null until the list has been checked. */
+    private var hdrCount: Int? = null
     private val addressView = Ui.text(ctx, "", Ui.HEADER_SP).apply {
         typeface = Typeface.MONOSPACE
         setPadding(0, ctx.dp(6), 0, ctx.dp(6))
@@ -78,6 +87,8 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         col.addView(modeRow)
         col.addView(soundRow)
         col.addView(infoRow)
+        col.addView(hdrRow)
+        renderHdr()
 
         col.addView(Ui.groupLabel(ctx, "Add from your phone or computer"))
         // Address and instructions on the left, a QR code of the same address on the right.
@@ -174,28 +185,50 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
             own.importPending()
             val items = own.items()
             val used = own.usedBytes()
-            main.post { render(items, used) }
+            hdrProbe.prune(items)
+            val hdr = items.associate { it.key to hdrProbe.probe(it) }
+            main.post { render(items, used, hdr) }
         }
     }
 
     private fun renderMode() {
+        modeRow.isEnabled = !prefs.hdrOnly   // HDR only decides what plays while it's on
         modeRow.setValue(when (prefs.ownMode) { Prefs.OWN_ONLY -> "Only mine"; Prefs.OWN_OFF -> "Off"; else -> "Mixed" })
-        modeRow.setSub(when (prefs.ownMode) {
+        modeRow.setSub(if (prefs.hdrOnly) "Not used while HDR only is on" else when (prefs.ownMode) {
             Prefs.OWN_ONLY -> "Only your pictures and videos; nothing is downloaded (art is used if you have none)"
             Prefs.OWN_OFF -> "Your pictures and videos are kept but not shown"
             else -> "One of yours after every three art slides"
         })
     }
 
-    private fun render(items: List<OwnMedia.Item>, used: Long = 0L) {
+    private fun renderHdr() {
+        val n = hdrCount
+        hdrRow.setSub(when {
+            n == null || !prefs.hdrOnly && n > 0 ->
+                "Plays only your HDR pictures and videos, full screen. Museum art, YouTube links and SDR files are skipped" +
+                    (n?.let { " · $it HDR item${if (it == 1) "" else "s"} on this TV" } ?: "")
+            n == 0 && prefs.hdrOnly -> "None of your media is HDR yet, so the screensaver shows a message. Add HDR10, HLG or Dolby Vision videos or HDR photos below"
+            n == 0 -> "None of your media is HDR yet. Add HDR10, HLG or Dolby Vision videos or HDR photos to use this"
+            else -> "Showing only your $n HDR item${if (n == 1) "" else "s"}, full screen"
+        })
+    }
+
+    private fun render(items: List<OwnMedia.Item>, used: Long = 0L, hdr: Map<String, HdrProbe.Result>? = null) {
+        if (hdr != null) {
+            hdrCount = hdr.values.count { it.hdr }
+            renderHdr()
+        }
         usedView.text = if (items.isEmpty()) "Nothing added yet." else
             "${items.size} item${if (items.size == 1) "" else "s"} · ${mb(used)} of ${mb(OwnMedia.QUOTA_BYTES)}"
         listBox.removeAllViews()
         for (item in items) {
+            val tag = hdr?.get(item.key)?.takeIf { it.kind != null }?.let { r ->
+                " · " + r.kind + if (r.playable) "" else " (no HDR decoder on this TV)"
+            }.orEmpty()
             val sub = when {
                 item.youtube -> "YouTube link · streams from YouTube"
-                item.video -> "Video · ${mb(item.bytes)}"
-                else -> "Picture · ${mb(item.bytes)}"
+                item.video -> "Video · ${mb(item.bytes)}$tag"
+                else -> "Picture · ${mb(item.bytes)}$tag"
             }
             val row = SettingRow(ctx, item.label, sub)
             row.setValue("Play")
