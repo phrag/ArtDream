@@ -18,6 +18,7 @@ import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.Surface
+import android.view.SurfaceView
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
@@ -36,6 +37,15 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextClock
 import android.widget.TextView
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.phrag.artdream.source.ArtSource
 import java.io.File
 import java.util.Calendar
@@ -68,10 +78,12 @@ class Slideshow(private val context: Context) {
         val videoW: Int = 0,
         val videoH: Int = 0,
         val durationMs: Long = 0,
-        /** Set for a YouTube link: shown live in [web] rather than decoded. */
+        /** Set for a YouTube link: shown live, by [exo] when [live] was found, else in [web]. */
         val youtubeId: String? = null,
+        val live: YouTubeLive.Streams? = null,
     ) {
         var player: MediaPlayer? = null
+        var exo: ExoPlayer? = null
         var surface: Surface? = null
         var web: WebView? = null
         /** Hands [web] back to the slideshow's pool (WebViews are reused, not destroyed per slide). */
@@ -82,6 +94,8 @@ class Slideshow(private val context: Context) {
             disposed = true
             web?.let { releaseWeb?.invoke(it) }
             web = null
+            exo?.release()
+            exo = null
             player?.let { runCatching { it.stop() }; it.release() }
             player = null
             surface?.release()
@@ -119,6 +133,7 @@ class Slideshow(private val context: Context) {
 
     private val queue = ArrayDeque<ArtCache.Entry>()
     private val brokenLinks = HashMap<String, Long>()   // YouTube id -> when to try it again
+    private val nativeBroken = HashMap<String, Long>()  // YouTube id -> when to try the native player again
     private var lastYouTubeLoadAt = 0L
     private val refreshing = AtomicBoolean(false)
     private var current: View? = null
@@ -312,7 +327,7 @@ class Slideshow(private val context: Context) {
         }
         val isVideo = slide.video != null
         val isYouTube = slide.youtubeId != null
-        val painting: View = if (isYouTube) youtubeView(slide) else if (isVideo) videoView(slide, intervalMs) else ImageView(context).apply {
+        val painting: View = if (isYouTube && slide.live != null) nativeYouTubeView(slide) else if (isYouTube) youtubeView(slide) else if (isVideo) videoView(slide, intervalMs) else ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setImageBitmap(slide.image)
             if (isNight()) colorFilter = NIGHT_FILTER
@@ -473,6 +488,76 @@ class Slideshow(private val context: Context) {
     private val displayH get() = displayMode?.let { minOf(it.physicalWidth, it.physicalHeight) } ?: 0
 
     /**
+     * A YouTube link played by Media3 from the stream URLs [YouTubeLive] found, on a SurfaceView:
+     * unlike the WebView or a TextureView, a SurfaceView hands the decoder's output straight to the
+     * display, so HDR streams show as HDR. (It doesn't fade with the slide the way the other views
+     * do.) No text track is loaded, so there are never captions. Starts somewhere inside a long
+     * video, loops a short one. If playback fails or never starts, the slide switches to the web
+     * player, and that video uses the web player for a while.
+     */
+    @OptIn(UnstableApi::class)
+    private fun nativeYouTubeView(slide: Slide): View {
+        val live = slide.live!!
+        val id = slide.youtubeId!!
+        val holder = FrameLayout(context)
+        val dm = context.resources.displayMetrics
+        val vw = live.width.takeIf { it > 0 } ?: (live.height * 16 / 9)
+        val vh = live.height.coerceAtLeast(1)
+        val fit = minOf(dm.widthPixels.toFloat() / vw.coerceAtLeast(1), dm.heightPixels.toFloat() / vh)
+        val surface = SurfaceView(context)
+        holder.addView(surface, FrameLayout.LayoutParams((vw * fit).toInt(), (vh * fit).toInt(), Gravity.CENTER))
+
+        var started = false
+        fun fallBack(why: String) = main.post {
+            if (slide.disposed || slide.exo == null) return@post
+            Log.w(TAG, "youtube $id native: $why; using the web player")
+            nativeBroken[id] = System.currentTimeMillis() + BROKEN_LINK_MS
+            slide.exo?.release()
+            slide.exo = null
+            holder.removeAllViews()
+            holder.addView(youtubeView(slide), FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }
+
+        val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+        val sources = ProgressiveMediaSource.Factory(http)
+        val video = sources.createMediaSource(MediaItem.fromUri(live.videoUrl))
+        val sound = prefs.videoSound && live.audioUrl != null
+        val source = if (sound) MergingMediaSource(video, sources.createMediaSource(MediaItem.fromUri(live.audioUrl!!))) else video
+        val exo = ExoPlayer.Builder(context).build()
+        slide.exo = exo
+        exo.setVideoSurfaceView(surface)
+        exo.volume = if (sound) 1f else 0f
+        exo.repeatMode = Player.REPEAT_MODE_ONE
+        exo.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                if (!started) Log.i(TAG, "youtube $id native: playing ${live.summary}")
+                started = true
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                fallBack("error ${error.errorCodeName} ${error.message}")
+            }
+        })
+        exo.setMediaSource(source)
+        // A slide shows a minute or so: start somewhere inside a long video, not always at 0:00.
+        if (live.durationMs > 240_000) exo.seekTo(Random.nextLong(live.durationMs - 150_000))
+        exo.playWhenReady = true
+        exo.prepare()
+        main.postDelayed({ if (!started) fallBack("never started") }, NATIVE_START_MS)
+        return holder
+    }
+
+    /** Whether the TV takes HDR (HDR10, HLG or Dolby Vision) at all; if not, SDR streams are picked. */
+    @Suppress("DEPRECATION")
+    private val hdrScreen by lazy {
+        try {
+            (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay
+                .hdrCapabilities?.supportedHdrTypes?.isNotEmpty() == true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * WebViews are kept and reused between slides. Destroying one while the next slide's page
      * was still loading left the new page without a network connection for ~25 s on the TV, so
      * they are only destroyed when the slideshow stops.
@@ -500,9 +585,12 @@ class Slideshow(private val context: Context) {
         while (idleWebs.isNotEmpty()) idleWebs.removeFirst().let { it.stopLoading(); it.destroy() }
     }
 
+    /** Runs on the loader thread, so the stream lookup (a few seconds) happens off the main one. */
     private fun decodeYouTube(entry: ArtCache.Entry): Slide? {
         val id = OwnMedia.youtubeId(entry.image) ?: return null
-        return Slide(entry.art, null, Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888), youtubeId = id)
+        val nativeOk = (nativeBroken[id] ?: 0L) < System.currentTimeMillis()
+        val live = if (nativeOk) YouTubeLive.resolve(id, displayH, hdrScreen) else null
+        return Slide(entry.art, null, Bitmap.createBitmap(24, 14, Bitmap.Config.ARGB_8888), youtubeId = id, live = live)
     }
 
     /** Poster frame (for the blurred backdrop), size and length of a video; null if it can't be read. */
@@ -656,6 +744,8 @@ class Slideshow(private val context: Context) {
          * for ~30 s before the player started.
          */
         const val YOUTUBE_START_MS = 45_000L
+        /** A natively played YouTube link that shows no picture by now switches to the web player. */
+        const val NATIVE_START_MS = 20_000L
         /** Minimum spacing wanted between two YouTube page loads (see [advance]). */
         const val YOUTUBE_GAP_MS = 35_000L
         /** How long a failed YouTube link is left out of the playlist. */
