@@ -48,8 +48,10 @@ class OwnMedia(ctx: Context) {
     fun usedBytes(): Long = items().sumOf { it.bytes }
 
     /** Room for [size] more bytes without crossing our quota or leaving the TV short of space. */
-    fun hasRoomFor(size: Long): Boolean =
-        usedBytes() + size <= QUOTA_BYTES && dir.usableSpace - size >= MIN_FREE_BYTES
+    fun hasRoomFor(size: Long): Boolean = roomProblem(size) == null
+
+    /** Why [size] more bytes can't be taken right now, or null if they can. */
+    fun roomProblem(size: Long): String? = roomProblem(usedBytes(), size, dir.usableSpace)
 
     /**
      * Checks [file] (already fully written, e.g. a ".part") really is the [name] it claims to be
@@ -60,7 +62,7 @@ class OwnMedia(ctx: Context) {
         val kind = kindOf(clean)!!
         // The file is already on disk, so only the quota (not free space) is left to check.
         if (usedBytes() + file.length() > QUOTA_BYTES) {
-            throw Rejected("That would go over the ${QUOTA_BYTES / (1024 * 1024 * 1024)} GB limit for your own media")
+            throw Rejected("That would go over the ${gb(QUOTA_BYTES)} limit for your own media")
         }
         when (kind) {
             Kind.IMAGE -> {
@@ -155,12 +157,28 @@ class OwnMedia(ctx: Context) {
     companion object {
         private const val TAG = "fArtSaver"
         const val SOURCE = "mine"
-        /** Everything the user adds, together. */
-        const val QUOTA_BYTES = 3L * 1024 * 1024 * 1024
+        /** Everything the user adds, together. Free space ([MIN_FREE_BYTES]) is usually the tighter limit. */
+        const val QUOTA_BYTES = 8L * 1024 * 1024 * 1024
         /** Never fill the TV's storage: stop accepting below this much free space. */
         const val MIN_FREE_BYTES = 1L * 1024 * 1024 * 1024
-        /** Per file. A 4K clip of several minutes fits; a feature film doesn't. Long: 2 GB is past Int. */
-        const val MAX_FILE_BYTES = 2L * 1024 * 1024 * 1024
+        /** Per file. A 4K clip of several minutes fits; a feature film doesn't. Long: 2.5 GB is past Int. */
+        const val MAX_FILE_BYTES = 5L * 512 * 1024 * 1024
+
+        private const val GB = 1024L * 1024 * 1024
+
+        /** "2.5 GB", "8 GB": whole numbers without the ".0", and a dot whatever the TV's language. */
+        fun gb(bytes: Long): String {
+            val tenths = (bytes * 10 + GB / 2) / GB
+            return if (tenths % 10 == 0L) "${tenths / 10} GB" else "${tenths / 10}.${tenths % 10} GB"
+        }
+
+        /** Pure part of [OwnMedia.roomProblem]: [used] by our media, [free] on the TV's storage. */
+        fun roomProblem(used: Long, size: Long, free: Long): String? = when {
+            used + size > QUOTA_BYTES -> "That would go over the ${gb(QUOTA_BYTES)} limit for your own media"
+            free - size < MIN_FREE_BYTES ->
+                "Not enough free space on the TV (${gb(free)} free, and it keeps ${gb(MIN_FREE_BYTES)} spare)"
+            else -> null
+        }
 
         private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif")
         private val VIDEO_EXT = setOf("mp4", "m4v", "mov", "mkv", "webm", "3gp", "ts")

@@ -48,4 +48,23 @@ class OwnMediaTest {
         assertTrue(name.length <= 84)
         assertTrue(name.endsWith(".mp4"))
     }
+
+    @Test fun limits() {
+        assertEquals("2.5 GB", OwnMedia.gb(OwnMedia.MAX_FILE_BYTES))
+        assertEquals(2_684_354_560L, OwnMedia.MAX_FILE_BYTES)
+        assertEquals("8 GB", OwnMedia.gb(OwnMedia.QUOTA_BYTES))
+        assertEquals("1 GB", OwnMedia.gb(OwnMedia.MIN_FREE_BYTES))
+        assertTrue("a 2.5 GB file fits next to a full earlier one", 2 * OwnMedia.MAX_FILE_BYTES <= OwnMedia.QUOTA_BYTES)
+    }
+
+    @Test fun roomNeedsQuotaAndFreeSpace() {
+        val gb = 1024L * 1024 * 1024
+        val big = OwnMedia.MAX_FILE_BYTES
+        assertNull(OwnMedia.roomProblem(used = 0, size = big, free = 5 * gb))
+        assertNull(OwnMedia.roomProblem(used = 2 * gb, size = big, free = big + gb))
+        assertEquals("Not enough free space on the TV (3 GB free, and it keeps 1 GB spare)",
+            OwnMedia.roomProblem(used = 0, size = big, free = 3 * gb))
+        assertEquals("That would go over the 8 GB limit for your own media",
+            OwnMedia.roomProblem(used = 6 * gb, size = big, free = 100 * gb))
+    }
 }
