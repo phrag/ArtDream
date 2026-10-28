@@ -111,8 +111,8 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
         render(emptyList())
     }
 
-    /** The row to focus when the pane is entered with the D-pad. */
-    fun firstFocusable(): View = modeRow
+    /** The row to focus when the pane is entered with the D-pad: "Show my media" is disabled while HDR only is on. */
+    fun firstFocusable(): View = if (modeRow.isEnabled) modeRow else soundRow
 
     /** The pane became visible or hidden in the settings. */
     fun setShown(on: Boolean) {
@@ -256,7 +256,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
             .setTitle("Remove “${item.label}”?")
             .setMessage("It's deleted from this TV.")
             .setPositiveButton("Remove") { _, _ ->
-                io.execute { own.remove(item.key); main.post { reload(); modeRow.requestFocus() } }
+                io.execute { own.remove(item.key); main.post { reload(); firstFocusable().requestFocus() } }
             }
             .setNegativeButton("Cancel", null)
             .show()

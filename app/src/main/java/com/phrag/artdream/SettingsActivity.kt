@@ -324,10 +324,14 @@ class SettingsActivity : Activity(), DownloadController.Observer {
     private fun paneEntryFocus(): View? {
         val s = sections.getOrNull(current) ?: return null
         s.lastFocus?.let { v ->
-            if (v.isAttachedToWindow && v.isShown && v.isFocusable && v.isEnabled && v.isInside(s.pane)) return v
+            if (v.acceptsFocus() && v.isInside(s.pane)) return v
         }
-        return s.entry()
+        // A pane's first row can be switched off (My media's "Show my media" while HDR only is
+        // on); a disabled view refuses focus, which would leave the pane impossible to enter.
+        return s.entry()?.takeIf { it.acceptsFocus() } ?: firstFocusableIn(s.pane)
     }
+
+    private fun View.acceptsFocus() = isAttachedToWindow && isShown && isFocusable && isEnabled
 
     private fun enterPane() { paneEntryFocus()?.requestFocus() }
 
