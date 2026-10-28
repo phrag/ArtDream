@@ -76,7 +76,7 @@ To add a source: add a class implementing `source/ArtSource.kt` and list it in `
 
 Settings → **My media** adds your own content to the screensaver. It's kept apart from the
 museum cache: never trimmed, never counted as a download, not hit by the Landscape-only filter,
-and only you remove it. Up to 3 GB in total (2 GB per file), and it never fills the TV's last 1 GB.
+and only you remove it. Up to 8 GB in total (2.5 GB per file), and it never fills the TV's last 1 GB.
 "Show my media" is *Mixed* (one of yours after every three art slides, so a single upload still
 turns up within a few minutes), *Only mine* (nothing is downloaded; art is used if you
 have none) or *Off*. Videos play muted unless you turn on *Sound on videos*, loop if shorter than

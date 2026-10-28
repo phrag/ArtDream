@@ -219,7 +219,7 @@ class MyMediaPane(private val ctx: Context, private val prefs: Prefs, private va
             renderHdr()
         }
         usedView.text = if (items.isEmpty()) "Nothing added yet." else
-            "${items.size} item${if (items.size == 1) "" else "s"} · ${mb(used)} of ${mb(OwnMedia.QUOTA_BYTES)}"
+            "${items.size} item${if (items.size == 1) "" else "s"} · ${mb(used)} of ${OwnMedia.gb(OwnMedia.QUOTA_BYTES)}"
         listBox.removeAllViews()
         for (item in items) {
             val tag = hdr?.get(item.key)?.takeIf { it.kind != null }?.let { r ->

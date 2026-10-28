@@ -144,7 +144,7 @@ object YouTubeDownloads {
         val vSize = size(vUrl, video.itagItem?.contentLength ?: -1)
         val aSize = if (audio != null) size(audio.content, audio.itagItem?.contentLength ?: -1) else 0L
         job.total = vSize + aSize
-        if (job.total > OwnMedia.MAX_FILE_BYTES) throw IOException("it's ${job.total / (1024 * 1024)} MB, over the ${OwnMedia.MAX_FILE_BYTES / (1024 * 1024 * 1024)} GB limit")
+        if (job.total > OwnMedia.MAX_FILE_BYTES) throw IOException("it's ${job.total / (1024 * 1024)} MB, over the ${OwnMedia.gb(OwnMedia.MAX_FILE_BYTES)} limit")
         if (!own.hasRoomFor(job.total)) throw IOException("not enough room left on the TV")
 
         job.state = State.DOWNLOADING; onChange()

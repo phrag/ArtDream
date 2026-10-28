@@ -193,8 +193,8 @@ class UploadServer(
         val len = req.contentLength
         if (len < 0) return fail(out, 411, name, "No file size sent")
         if (len == 0L) return fail(out, 400, name, "Empty file")
-        if (len > OwnMedia.MAX_FILE_BYTES) return fail(out, 413, name, "Larger than ${OwnMedia.MAX_FILE_BYTES / (1024 * 1024 * 1024)} GB")
-        if (!own.hasRoomFor(len)) return fail(out, 507, name, "Not enough room left for your own media")
+        if (len > OwnMedia.MAX_FILE_BYTES) return fail(out, 413, name, "Larger than ${OwnMedia.gb(OwnMedia.MAX_FILE_BYTES)}")
+        own.roomProblem(len)?.let { return fail(out, 507, name, it) }
         if (req.headers["expect"]?.contains("100-continue", ignoreCase = true) == true) {
             out.write("HTTP/1.1 100 Continue\r\n\r\n".toByteArray()); out.flush()
         }
